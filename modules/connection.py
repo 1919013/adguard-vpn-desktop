@@ -62,7 +62,6 @@ def build_connection_tab():
     location_line.pack_start(location_combo, True, True, 0)
 
     locations: list[dict] = []
-    busy = False
 
     def show_message(title, body):
         dialog = Gtk.MessageDialog(
@@ -77,23 +76,12 @@ def build_connection_tab():
         dialog.destroy()
 
     def run_async(operation, callback):
-        nonlocal busy
-        if busy:
-            return
-        busy = True
-
         def worker():
             try:
                 result = operation()
             except Exception as error:
                 result = (1, str(error))
-            GLib.idle_add(finish, callback, result)
-
-        def finish(done_callback, result):
-            nonlocal busy
-            busy = False
-            done_callback(result)
-            return False
+            GLib.idle_add(callback, result)
 
         threading.Thread(target=worker, daemon=True).start()
 
