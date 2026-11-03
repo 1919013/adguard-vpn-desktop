@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Build artifacts
+build/
+dist/
+*.deb
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.token
+*.log
+*.bak
+*.backup
+*~
+
+# DNS snapshots and local state
+dns-backup*.json
+*-before-test.txt
+*.state
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
