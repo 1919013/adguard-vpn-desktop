@@ -6,7 +6,6 @@ services.dns_manager.DNSManager, which enforces the test-profile allowlist.
 from __future__ import annotations
 
 import threading
-import traceback
 from typing import Callable
 
 from services.dns_manager import DNSManager, DNSManagerError, TEST_PROFILES
