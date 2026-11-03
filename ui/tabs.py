@@ -1,4 +1,5 @@
 """Notebook tab assembly."""
+from modules.connection import build_connection_tab
 from modules.dns import build_dns_tab
 
 
@@ -6,8 +7,9 @@ def build_tabs(notebook):
     """Populate the main notebook and return it."""
     from gi.repository import Gtk
 
+    notebook.append_page(build_connection_tab(), Gtk.Label(label="Подключение"))
+
     placeholders = (
-        ("Подключение", "Управление подключением VPN будет подключено следующим этапом."),
         ("Приложения", "Настройка маршрутизации отдельных приложений пока не реализована."),
         ("Настройки", "Настройки приложения будут добавлены следующим этапом."),
     )
