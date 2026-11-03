@@ -262,7 +262,7 @@ class DNSManager:
             left, right = expected[field], actual[field]
             if field == "ipv4.dns":
                 normalize = lambda value: sorted(
-                    x.strip() for x in re.split(r"[,;\\s]+", value) if x.strip()
+                    x.strip() for x in re.split(r"[,;\s]+", value) if x.strip()
                 )
                 if normalize(left) != normalize(right):
                     raise DNSManagerError(
