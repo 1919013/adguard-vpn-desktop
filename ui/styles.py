@@ -1,1 +1,1 @@
-GTK styles and visual constants.
+"""GTK styles and visual constants."""
