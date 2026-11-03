@@ -1,1 +1,1 @@
-Reusable dialogs and confirmation prompts.
+"""Reusable dialogs and confirmation prompts."""
