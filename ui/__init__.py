@@ -1,1 +1,1 @@
-GTK user-interface package.
+"""GTK user-interface package."""
