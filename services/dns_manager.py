@@ -68,7 +68,7 @@ class DNSManager:
         self.state_dir = Path(
             state_dir or Path.home() / ".local/state/adguard-vpn-desktop"
         )
-        self.backup_file = self.state_dir / "dns-backup-test.json"
+        self.backup_file = self.state_dir / "dns-backup-test-v2.json"
         self.lock_file = self.state_dir / "dns-manager.lock"
         self.runner = runner
 
