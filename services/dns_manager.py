@@ -172,6 +172,13 @@ class DNSManager:
         return {p: self._read_settings(p, RESTORE_FIELDS) for p in self.profiles}
 
     def create_backup(self) -> Path:
+        lock_fd = self._locked()
+        try:
+            return self._create_backup_unlocked()
+        finally:
+            os.close(lock_fd)
+
+    def _create_backup_unlocked(self) -> Path:
         self._ensure_state_dir()
         data = {
             "version": 1,
