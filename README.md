@@ -1,6 +1,6 @@
 # ADGuard VPN Desktop
 
-Open-source graphical desktop interface for AdGuard VPN CLI on Linux.
+Independent community graphical interface for the official AdGuard VPN CLI on Linux. This project is not an AdGuard product and is not affiliated with AdGuard Software Ltd.
 
 > Work in progress. This repository currently contains a scaffold, not a replacement for the installed application.
 
@@ -31,7 +31,7 @@ The UI must not execute operating-system commands directly. System operations ar
 - Never commit credentials, private keys or local DNS snapshots.
 
 ## Status
-Initial scaffold. Existing working code will be migrated in small, reviewable steps.
+VPN connection and server list are implemented. Other features are under development; per-application routing is not yet implemented.
 
 ## License
 No license has been selected yet. Until one is added, this repository does not grant permission to redistribute or modify the project.
