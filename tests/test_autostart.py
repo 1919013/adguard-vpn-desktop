@@ -61,6 +61,18 @@ class AutostartTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "--boot"):
                 manager.enable()
 
+    def test_vpn_cli_autostart_requires_successful_help_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = VPNCLIAutostartManager(
+                entry_path=Path(directory) / "autostart.desktop",
+                binary_path="/usr/bin/adguardvpn-cli",
+                help_runner=lambda *_args, **_kwargs: SimpleNamespace(
+                    stdout="--boot", returncode=1
+                ),
+            )
+            with self.assertRaisesRegex(RuntimeError, "--boot"):
+                manager.enable()
+
     def test_enable_requires_existing_launcher(self):
         with tempfile.TemporaryDirectory() as directory:
             entry = Path(directory) / "autostart.desktop"
