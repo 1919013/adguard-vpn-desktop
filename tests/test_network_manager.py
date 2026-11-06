@@ -11,9 +11,8 @@ class NetworkManagerTests(unittest.TestCase):
 
     def test_devices_are_discovered_without_hardcoded_names(self):
         def runner(args):
-            if args == ["device", "status"]:
+            if args == ["--fields", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"]:
                 return 0, (
-                    "DEVICE:TYPE:STATE:CONNECTION\n"
                     "enp2s0:ethernet:connected:Office LAN\n"
                     "wlp3s0:wifi:disconnected:--\n"
                     "lo:loopback:connected:lo\n"
@@ -32,9 +31,10 @@ class NetworkManagerTests(unittest.TestCase):
 
     def test_profiles_are_discovered_dynamically(self):
         def runner(args):
-            self.assertEqual(args, ["connection", "show"])
+            self.assertEqual(args, [
+                "--fields", "NAME,UUID,TYPE,DEVICE", "connection", "show"
+            ])
             return 0, (
-                "NAME:UUID:TYPE:DEVICE\n"
                 "Home Wi-Fi:abc-123:802-11-wireless:wlp3s0\n"
                 "Wired profile:def-456:802-3-ethernet:--\n"
             )
