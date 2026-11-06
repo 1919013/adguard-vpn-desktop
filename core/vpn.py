@@ -1,11 +1,11 @@
 """VPN lifecycle orchestration."""
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 
 from core.commands import run_cli
 from core.servers import parse_locations
-
 
 Runner = Callable[..., tuple[int, str]]
 
@@ -18,6 +18,27 @@ class VPNService:
 
     def status(self) -> tuple[int, str]:
         return self.runner(["status"], timeout=10)
+
+    def version(self) -> tuple[int, str]:
+        return self.runner(["--version"], timeout=10)
+
+    def check_update(self) -> tuple[int, str]:
+        return self.runner(["check-update"], timeout=90)
+
+    def update(self) -> tuple[int, str]:
+        return self.runner(["update", "-y"], timeout=600)
+
+    def config_show(self) -> tuple[int, str]:
+        return self.runner(["config", "show"], timeout=15)
+
+    def set_bound_interface(self, interface: str) -> tuple[int, str]:
+        interface = interface.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", interface):
+            return 2, "Недопустимое имя сетевого интерфейса."
+        return self.runner(["config", "set-bound-if-override", interface], timeout=20)
+
+    def clear_bound_interface(self) -> tuple[int, str]:
+        return self.runner(["config", "set-bound-if-override", ""], timeout=20)
 
     def list_locations(self) -> tuple[int, str, list[dict]]:
         code, output = self.runner(["list-locations"], timeout=40)
