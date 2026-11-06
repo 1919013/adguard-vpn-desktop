@@ -160,12 +160,24 @@ class DNSManager:
     def _locked(self):
         """Context manager acquiring a non-blocking per-user operation lock."""
         self._ensure_state_dir()
-        fd = os.open(self.lock_file, os.O_CREAT | os.O_RDWR, 0o600)
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
         try:
+            fd = os.open(self.lock_file, flags, 0o600)
+        except OSError as exc:
+            raise DNSManagerError(f"Cannot safely open DNS operation lock: {exc}") from exc
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                raise DNSManagerError("DNS operation lock has an unexpected type or owner")
+            if stat.S_IMODE(info.st_mode) != 0o600:
+                raise DNSManagerError("DNS operation lock permissions must be 0600")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             os.close(fd)
             raise DNSManagerError("Another DNS operation is already running")
+        except Exception:
+            os.close(fd)
+            raise
         return fd
 
     def _snapshot(self) -> dict[str, dict[str, str]]:
