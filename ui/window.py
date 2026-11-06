@@ -14,7 +14,7 @@ class MainWindow(Gtk.Window):
         self.set_position(Gtk.WindowPosition.CENTER)
         self.connect("destroy", Gtk.main_quit)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         outer.set_border_width(10)
         self.add(outer)
 
@@ -22,6 +22,14 @@ class MainWindow(Gtk.Window):
         heading.set_markup("<b>ADGuard VPN Desktop</b>")
         heading.set_xalign(0)
         outer.pack_start(heading, False, False, 0)
+
+        disclaimer = Gtk.Label(
+            label="Независимая графическая оболочка для официального AdGuard VPN CLI. "
+                  "Не является продуктом AdGuard."
+        )
+        disclaimer.set_xalign(0)
+        disclaimer.set_line_wrap(True)
+        outer.pack_start(disclaimer, False, False, 0)
 
         notebook = Gtk.Notebook()
         notebook.set_scrollable(True)
