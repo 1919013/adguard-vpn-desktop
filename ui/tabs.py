@@ -1,26 +1,26 @@
 """Notebook tab assembly."""
+from modules.applications import build_applications_tab
 from modules.connection import build_connection_tab
+from modules.diagnostics import build_diagnostics_tab
 from modules.dns import build_dns_tab
+from modules.help import build_help_tab
+from modules.interfaces import build_interfaces_tab
+from modules.settings import build_settings_tab
 
 
 def build_tabs(notebook):
-    """Populate the main notebook and return it."""
+    """Populate all currently available feature tabs."""
     from gi.repository import Gtk
 
-    notebook.append_page(build_connection_tab(), Gtk.Label(label="Подключение"))
-
-    placeholders = (
-        ("Приложения", "Настройка маршрутизации отдельных приложений пока не реализована."),
-        ("Настройки", "Настройки приложения будут добавлены следующим этапом."),
+    pages = (
+        (build_connection_tab(), "Подключение"),
+        (build_applications_tab(), "Приложения"),
+        (build_interfaces_tab(), "Сетевые интерфейсы"),
+        (build_dns_tab(), "DNS и защита"),
+        (build_diagnostics_tab(), "Диагностика"),
+        (build_settings_tab(), "Настройки"),
+        (build_help_tab(), "Справка"),
     )
-    for title, message in placeholders:
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        page.set_border_width(16)
-        label = Gtk.Label(label=message)
-        label.set_xalign(0)
-        label.set_line_wrap(True)
-        page.pack_start(label, False, False, 0)
+    for page, title in pages:
         notebook.append_page(page, Gtk.Label(label=title))
-
-    notebook.append_page(build_dns_tab(), Gtk.Label(label="DNS и защита"))
     return notebook
