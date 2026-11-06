@@ -117,8 +117,10 @@ def build_info_tab(vpn: VPNService | None = None):
             GLib.idle_add(finish, result)
         def finish(result):
             set_output(str(result))
-            for button in (check, update, install):
-                button.set_sensitive(True)
+            check.set_sensitive(True)
+            installed_now = shutil.which("adguardvpn-cli") is not None
+            update.set_sensitive(installed_now)
+            install.set_sensitive(not installed_now)
             return False
         threading.Thread(target=worker, daemon=True).start()
 
