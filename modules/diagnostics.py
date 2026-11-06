@@ -44,6 +44,8 @@ def collect_diagnostics(vpn: VPNService | None = None,
             "addresses": "IP-адреса интерфейсов",
             "ipv4_default_route": "Маршрут IPv4 по умолчанию",
             "ipv6_default_route": "Маршрут IPv6 по умолчанию",
+            "ipv4_route_probe": "Проверочный маршрут IPv4 до 1.1.1.1",
+            "ipv6_route_probe": "Проверочный маршрут IPv6 до Cloudflare",
             "dns_by_device": "DNS, настроенные в NetworkManager",
             "resolv_conf": "Содержимое /etc/resolv.conf",
         }
