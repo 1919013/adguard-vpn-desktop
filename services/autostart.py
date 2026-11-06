@@ -11,7 +11,8 @@ from pathlib import Path
 
 def _desktop_quote(value: str) -> str:
     """Quote one argument according to the Desktop Entry Exec field rules."""
-    value = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+    value = (value.replace("\\", "\\\\").replace('"', '\\"')
+             .replace(chr(96), "\\" + chr(96)).replace("$", "\\$").replace("%", "%%"))
     return '"' + value + '"'
 
 
