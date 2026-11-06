@@ -4,6 +4,7 @@ from modules.connection import build_connection_tab
 from modules.diagnostics import build_diagnostics_tab
 from modules.dns import build_dns_tab
 from modules.help import build_help_tab
+from modules.info import build_info_tab
 from modules.interfaces import build_interfaces_tab
 from modules.settings import build_settings_tab
 
@@ -14,6 +15,7 @@ def build_tabs(notebook):
 
     pages = (
         (build_connection_tab(), "Подключение"),
+        (build_info_tab(), "Инфо ADGuard"),
         (build_applications_tab(), "Приложения"),
         (build_interfaces_tab(), "Сетевые интерфейсы"),
         (build_dns_tab(), "DNS и защита"),
