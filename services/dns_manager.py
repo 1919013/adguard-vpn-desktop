@@ -300,6 +300,15 @@ class DNSManager:
                 raise DNSManagerError(
                     "Test profiles must be inactive: " + ", ".join(active_targets)
                 )
+            backup = self.validate_backup()
+            for profile in self.profiles:
+                current_settings = self._read_settings(profile, BACKUP_FIELDS)
+                saved_settings = backup["profiles"][profile]
+                if current_settings != saved_settings:
+                    raise DNSManagerError(
+                        f"Backup for {profile} does not match current settings. "
+                        "Create a fresh backup before applying DNS."
+                    )
             snapshot = self._snapshot()
             desired = {}
             for profile, settings in snapshot.items():
