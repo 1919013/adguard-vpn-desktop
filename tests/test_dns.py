@@ -34,7 +34,7 @@ class DNSManagerTests(unittest.TestCase):
 
     def test_unknown_test_profile_is_rejected(self):
         with self.assertRaises(ValueError):
-            DNSManager(profiles=("ADGuard-DNS-TEST-WIFI-SECURE",))
+            DNSManager(profiles=("unapproved-user-profile",))
 
     def test_dry_run_never_changes_network(self):
         calls = []
