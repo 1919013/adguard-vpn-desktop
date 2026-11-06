@@ -6,7 +6,7 @@ from services.network_manager import NetworkManagerService, _split_terse
 
 class NetworkManagerTests(unittest.TestCase):
     def test_split_terse_preserves_escaped_colons(self):
-        self.assertEqual(_split_terse(r"Office\\: guest:uuid:type:eth0"),
+        self.assertEqual(_split_terse(r"Office\: guest:uuid:type:eth0"),
                          ["Office: guest", "uuid", "type", "eth0"])
 
     def test_devices_are_discovered_without_hardcoded_names(self):
@@ -20,9 +20,8 @@ class NetworkManagerTests(unittest.TestCase):
                 )
             raise AssertionError(args)
 
-        service = NetworkManagerService(runner)
         self.assertEqual(
-            service.devices(),
+            NetworkManagerService(runner).devices(),
             [
                 {"name": "enp2s0", "type": "ethernet", "state": "connected",
                  "connection": "Office LAN"},
