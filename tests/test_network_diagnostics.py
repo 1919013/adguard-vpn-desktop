@@ -14,6 +14,7 @@ class NetworkDiagnosticsTests(unittest.TestCase):
                 "nmcli", "--colors", "no", "--fields",
                 "GENERAL.DEVICE,IP4.DNS,IP6.DNS", "device", "show",
             ],
+            "resolv_conf": ["cat", "/etc/resolv.conf"],
         }
         def runner(args):
             for key, command in expected.items():
@@ -25,6 +26,7 @@ class NetworkDiagnosticsTests(unittest.TestCase):
         self.assertEqual(set(result), set(expected))
         self.assertEqual(result["ipv4_default_route"], (0, "ipv4_default_route"))
         self.assertEqual(result["dns_by_device"], (0, "dns_by_device"))
+        self.assertEqual(result["resolv_conf"], (0, "resolv_conf"))
 
     def test_command_failures_are_preserved(self):
         diagnostics = NetworkDiagnostics(lambda _args: (1, "not available"))
