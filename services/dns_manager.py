@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 ADGUARD_DNS = ("46.243.231.30", "46.243.231.31")
-TEST_PROFILES = ("ADGuard-DNS-TEST", "ADGuard-DNS-TEST-WIFI")
+TEST_PROFILES = ("vpn-desktop-test-wired", "vpn-desktop-test-wireless")
 BACKUP_FIELDS = (
     "ipv4.method", "ipv4.dns", "ipv4.dns-search", "ipv4.dns-options",
     "ipv4.dns-priority", "ipv4.ignore-auto-dns", "ipv4.route-metric",
