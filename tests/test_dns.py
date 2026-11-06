@@ -86,6 +86,16 @@ class DNSManagerTests(unittest.TestCase):
             os.chmod(manager.backup_file, 0o600)
             self.assertEqual(manager.validate_backup(), data)
 
+    def test_backup_creation_respects_dns_operation_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=lambda *a, **k: (0, ""))
+            lock_fd = manager._locked()
+            try:
+                with self.assertRaisesRegex(DNSManagerError, "already running"):
+                    manager.create_backup()
+            finally:
+                os.close(lock_fd)
+
     def test_apply_refuses_to_change_network_without_backup(self):
         calls = []
         def runner(command, timeout=15):
