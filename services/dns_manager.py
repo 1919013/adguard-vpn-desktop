@@ -160,18 +160,37 @@ class DNSManager:
     def _locked(self):
         """Context manager acquiring a non-blocking per-user operation lock."""
         self._ensure_state_dir()
-        fd = os.open(self.lock_file, os.O_CREAT | os.O_RDWR, 0o600)
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
         try:
+            fd = os.open(self.lock_file, flags, 0o600)
+        except OSError as exc:
+            raise DNSManagerError(f"Cannot safely open DNS operation lock: {exc}") from exc
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                raise DNSManagerError("DNS operation lock has an unexpected type or owner")
+            if stat.S_IMODE(info.st_mode) != 0o600:
+                raise DNSManagerError("DNS operation lock permissions must be 0600")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             os.close(fd)
             raise DNSManagerError("Another DNS operation is already running")
+        except Exception:
+            os.close(fd)
+            raise
         return fd
 
     def _snapshot(self) -> dict[str, dict[str, str]]:
         return {p: self._read_settings(p, RESTORE_FIELDS) for p in self.profiles}
 
     def create_backup(self) -> Path:
+        lock_fd = self._locked()
+        try:
+            return self._create_backup_unlocked()
+        finally:
+            os.close(lock_fd)
+
+    def _create_backup_unlocked(self) -> Path:
         self._ensure_state_dir()
         data = {
             "version": 1,
@@ -300,6 +319,21 @@ class DNSManager:
                 raise DNSManagerError(
                     "Test profiles must be inactive: " + ", ".join(active_targets)
                 )
+            try:
+                backup = self.validate_backup()
+            except DNSManagerError as exc:
+                raise DNSManagerError(
+                    "A valid DNS backup is required before applying changes. "
+                    "Create a backup and validate it first. " + str(exc)
+                ) from exc
+            for profile in self.profiles:
+                current_settings = self._read_settings(profile, BACKUP_FIELDS)
+                saved_settings = backup["profiles"][profile]
+                if current_settings != saved_settings:
+                    raise DNSManagerError(
+                        f"Backup for {profile} does not match current settings. "
+                        "Create a fresh backup before applying DNS."
+                    )
             snapshot = self._snapshot()
             desired = {}
             for profile, settings in snapshot.items():

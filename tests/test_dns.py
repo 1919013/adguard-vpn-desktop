@@ -26,7 +26,7 @@ class FakeManager:
 
 
 class DNSManagerTests(unittest.TestCase):
-    def test_production_profiles_are_rejected(self):
+    def test_unknown_profiles_are_rejected(self):
         for profile in ("custom-wired-profile", "custom-wifi-profile"):
             with self.subTest(profile=profile):
                 with self.assertRaises(ValueError):
@@ -85,6 +85,87 @@ class DNSManagerTests(unittest.TestCase):
             manager.backup_file.write_text(json.dumps(data), encoding="utf-8")
             os.chmod(manager.backup_file, 0o600)
             self.assertEqual(manager.validate_backup(), data)
+
+    def test_backup_is_private_and_never_overwritten(self):
+        def runner(command, timeout=15):
+            if "connection" in command and "show" in command:
+                fields = command[command.index("--fields") + 1].split(",")
+                return 0, "\n".join(f"{field}:" for field in fields)
+            return 0, ""
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=runner)
+            path = manager.create_backup()
+            self.assertTrue(path.is_file())
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+            with self.assertRaisesRegex(DNSManagerError, "overwrite is forbidden"):
+                manager.create_backup()
+
+    def test_dns_lock_rejects_insecure_existing_lock_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=lambda *a, **k: (0, ""))
+            manager._ensure_state_dir()
+            manager.lock_file.write_text("", encoding="utf-8")
+            os.chmod(manager.lock_file, 0o644)
+            with self.assertRaisesRegex(DNSManagerError, "permissions must be 0600"):
+                manager._locked()
+
+    def test_backup_creation_respects_dns_operation_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=lambda *a, **k: (0, ""))
+            lock_fd = manager._locked()
+            try:
+                with self.assertRaisesRegex(DNSManagerError, "already running"):
+                    manager.create_backup()
+            finally:
+                os.close(lock_fd)
+
+    def test_apply_refuses_to_change_network_without_backup(self):
+        calls = []
+        def runner(command, timeout=15):
+            calls.append(command)
+            if command[:2] == ["adguardvpn-cli", "status"]:
+                return 0, "Connected to TEST in TUN mode, running on tun0"
+            if "connection" in command and "show" in command:
+                return 0, ""
+            return 0, ""
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=runner)
+            with self.assertRaisesRegex(DNSManagerError, "valid DNS backup"):
+                manager.apply_adguard_dns()
+            self.assertFalse(any("modify" in command for command in calls))
+
+    def test_apply_refuses_stale_backup(self):
+        calls = []
+        def runner(command, timeout=15):
+            calls.append(command)
+            if command[:2] == ["adguardvpn-cli", "status"]:
+                return 0, "Connected to TEST in TUN mode, running on tun0"
+            if "connection" in command and "show" in command and "--active" in command:
+                return 0, ""
+            if "connection" in command and "show" in command:
+                fields = command[command.index("--fields") + 1].split(",")
+                return 0, "\n".join(
+                    f"{field}:" + ("8.8.8.8" if field == "ipv4.dns" else "")
+                    for field in fields
+                )
+            return 0, ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=runner)
+            manager._ensure_state_dir()
+            saved = {
+                profile: {field: "" for field in BACKUP_FIELDS}
+                for profile in TEST_PROFILES
+            }
+            saved[TEST_PROFILES[0]]["ipv4.dns"] = "1.1.1.1"
+            manager.backup_file.write_text(
+                json.dumps({"version": 1, "created": "now", "profiles": saved}),
+                encoding="utf-8",
+            )
+            os.chmod(manager.backup_file, 0o600)
+            with self.assertRaisesRegex(DNSManagerError, "does not match current settings"):
+                manager.apply_adguard_dns()
+            self.assertFalse(any("modify" in command for command in calls))
 
     def test_dns_constants(self):
         self.assertEqual(ADGUARD_DNS, ("46.243.231.30", "46.243.231.31"))
