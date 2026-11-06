@@ -44,6 +44,7 @@ class AutostartTests(unittest.TestCase):
             self.assertEqual(calls[0][-2:], ["connect", "--help"])
             content = entry.read_text(encoding="utf-8")
             self.assertIn("connect", content)
+            self.assertIn("-y", content)
             self.assertIn("--boot", content)
             self.assertTrue(manager.disable())
             self.assertFalse(manager.enabled())
