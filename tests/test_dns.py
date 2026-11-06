@@ -97,7 +97,7 @@ class DNSManagerTests(unittest.TestCase):
             return 0, ""
         with tempfile.TemporaryDirectory() as directory:
             manager = DNSManager(state_dir=directory, runner=runner)
-            with self.assertRaises(DNSManagerError):
+            with self.assertRaisesRegex(DNSManagerError, "valid DNS backup"):
                 manager.apply_adguard_dns()
             self.assertFalse(any("modify" in command for command in calls))
 
