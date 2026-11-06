@@ -32,7 +32,7 @@ def _split_terse(line: str) -> list[str]:
         if escaped:
             current.append(char)
             escaped = False
-        elif char == "\\\\":
+        elif char == "\\":
             escaped = True
         elif char == ":":
             fields.append("".join(current))
@@ -40,7 +40,7 @@ def _split_terse(line: str) -> list[str]:
         else:
             current.append(char)
     if escaped:
-        current.append("\\\\")
+        current.append("\\")
     fields.append("".join(current))
     return fields
 
