@@ -96,11 +96,15 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
         def worker():
             try:
                 snapshot = network.snapshot()
+                binding_code, binding, binding_output = vpn.bound_interface()
                 error = None
             except Exception as exc:
-                snapshot, error = {"devices": [], "profiles": []}, str(exc)
-            GLib.idle_add(finish_refresh, snapshot, error)
-        def finish_refresh(snapshot, error):
+                snapshot, binding_code, binding, binding_output = (
+                    {"devices": [], "profiles": []}, 1, "", ""
+                )
+                error = str(exc)
+            GLib.idle_add(finish_refresh, snapshot, binding_code, binding, binding_output, error)
+        def finish_refresh(snapshot, binding_code, binding, binding_output, error):
             devices_store.clear()
             profiles_store.clear()
             combo.remove_all()
@@ -120,10 +124,22 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
                     item["name"], item["type"], item["device"]
                 ])
             if candidates:
-                combo.set_active(0)
+                if binding_code == 0 and binding and any(
+                    item["name"] == binding for item in candidates
+                ):
+                    combo.set_active_id(binding)
+                else:
+                    combo.set_active(0)
+            binding_label = (
+                f"Текущая привязка VPN: {binding}"
+                if binding_code == 0 and binding
+                else "Текущая привязка VPN: автоматический выбор"
+                if binding_code == 0
+                else "Текущую привязку VPN прочитать не удалось"
+            )
             status.set_text(
                 error or (
-                    f"Устройств: {len(snapshot['devices'])}; "
+                    f"{binding_label}. Устройств: {len(snapshot['devices'])}; "
                     f"профилей: {len(snapshot['profiles'])}; "
                     f"кандидатов для привязки: {len(candidates)}"
                 )
@@ -153,6 +169,27 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
             return False
         threading.Thread(target=worker, daemon=True).start()
 
+    def set_and_verify(selected: str):
+        code, output = vpn.set_bound_interface(selected)
+        if code:
+            return code, output
+        verify_code, actual, details = vpn.bound_interface()
+        if verify_code or actual != selected:
+            return 1, (
+                "Команда завершилась, но проверка конфигурации не подтвердила "
+                f"привязку к {selected}.\n{details}"
+            )
+        return 0, (output + "\nПроверено: исходящий интерфейс = " + actual).strip()
+
+    def clear_and_verify():
+        code, output = vpn.clear_bound_interface()
+        if code:
+            return code, output
+        verify_code, actual, details = vpn.bound_interface()
+        if verify_code or actual:
+            return 1, "Не удалось подтвердить сброс привязки.\n" + details
+        return 0, (output + "\nПроверено: автоматический выбор интерфейса.").strip()
+
     def do_apply():
         selected = combo.get_active_id()
         if not selected:
@@ -163,7 +200,7 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
             "Если интерфейс отключится, VPN может потерять соединение.",
             lambda: run_command(
                 f"Привязка к {selected}",
-                lambda: vpn.set_bound_interface(selected),
+                lambda: set_and_verify(selected),
             ),
         )
 
@@ -171,7 +208,7 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
         confirm(
             "Будет очищено значение bound-if-override. AdGuard VPN CLI снова сможет "
             "выбирать исходящий интерфейс автоматически.",
-            lambda: run_command("Снятие привязки", vpn.clear_bound_interface),
+            lambda: run_command("Снятие привязки", clear_and_verify),
         )
 
     refresh.connect("clicked", refresh_list)
