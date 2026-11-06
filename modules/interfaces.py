@@ -96,13 +96,13 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
         def worker():
             try:
                 snapshot = network.snapshot()
-                binding_code, binding, binding_output = vpn.bound_interface()
                 error = None
             except Exception as exc:
-                snapshot, binding_code, binding, binding_output = (
-                    {"devices": [], "profiles": []}, 1, "", ""
-                )
-                error = str(exc)
+                snapshot, error = {"devices": [], "profiles": []}, str(exc)
+            try:
+                binding_code, binding, binding_output = vpn.bound_interface()
+            except Exception as exc:
+                binding_code, binding, binding_output = 1, "", str(exc)
             GLib.idle_add(finish_refresh, snapshot, binding_code, binding, binding_output, error)
         def finish_refresh(snapshot, binding_code, binding, binding_output, error):
             devices_store.clear()
