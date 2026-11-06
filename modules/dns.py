@@ -61,7 +61,7 @@ def build_dns_tab(manager: DNSManager | None = None):
     warning.set_markup(
         "<b>Безопасный тестовый режим.</b> Изменения разрешены только для "
         + ", ".join(TEST_PROFILES)
-        + ". Рабочие профили Wired connection 1 и DOD недоступны."
+        + ". Активные пользовательские профили не изменяются."
     )
     root.pack_start(warning, False, False, 0)
 
