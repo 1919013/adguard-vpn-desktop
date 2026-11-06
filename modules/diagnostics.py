@@ -45,6 +45,7 @@ def collect_diagnostics(vpn: VPNService | None = None,
             "ipv4_default_route": "Маршрут IPv4 по умолчанию",
             "ipv6_default_route": "Маршрут IPv6 по умолчанию",
             "dns_by_device": "DNS, настроенные в NetworkManager",
+            "resolv_conf": "Содержимое /etc/resolv.conf",
         }
         for key, label in labels.items():
             result_code, output = details.get(key, (1, "Нет данных"))
