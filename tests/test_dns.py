@@ -101,6 +101,39 @@ class DNSManagerTests(unittest.TestCase):
                 manager.apply_adguard_dns()
             self.assertFalse(any("modify" in command for command in calls))
 
+    def test_apply_refuses_stale_backup(self):
+        calls = []
+        def runner(command, timeout=15):
+            calls.append(command)
+            if command[:2] == ["adguardvpn-cli", "status"]:
+                return 0, "Connected to TEST in TUN mode, running on tun0"
+            if "connection" in command and "show" in command and "--active" in command:
+                return 0, ""
+            if "connection" in command and "show" in command:
+                fields = command[command.index("--fields") + 1].split(",")
+                return 0, "\n".join(
+                    f"{field}:" + ("8.8.8.8" if field == "ipv4.dns" else "")
+                    for field in fields
+                )
+            return 0, ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=runner)
+            manager._ensure_state_dir()
+            saved = {
+                profile: {field: "" for field in BACKUP_FIELDS}
+                for profile in TEST_PROFILES
+            }
+            saved[TEST_PROFILES[0]]["ipv4.dns"] = "1.1.1.1"
+            manager.backup_file.write_text(
+                json.dumps({"version": 1, "created": "now", "profiles": saved}),
+                encoding="utf-8",
+            )
+            os.chmod(manager.backup_file, 0o600)
+            with self.assertRaisesRegex(DNSManagerError, "does not match current settings"):
+                manager.apply_adguard_dns()
+            self.assertFalse(any("modify" in command for command in calls))
+
     def test_dns_constants(self):
         self.assertEqual(ADGUARD_DNS, ("46.243.231.30", "46.243.231.31"))
 
