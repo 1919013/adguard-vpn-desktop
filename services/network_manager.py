@@ -55,12 +55,14 @@ class NetworkManagerService:
         return self.runner(args)
 
     def devices(self) -> list[dict[str, str]]:
-        code, output = self._run(["device", "status"])
+        code, output = self._run([
+            "--fields", "DEVICE,TYPE,STATE,CONNECTION", "device", "status",
+        ])
         if code:
             raise RuntimeError(f"Не удалось получить сетевые интерфейсы: {output}")
         lines = output.splitlines()
         devices = []
-        for line in lines[1:]:
+        for line in lines:
             fields = _split_terse(line)
             if len(fields) < 4:
                 continue
@@ -74,11 +76,13 @@ class NetworkManagerService:
         return devices
 
     def profiles(self) -> list[dict[str, str]]:
-        code, output = self._run(["connection", "show"])
+        code, output = self._run([
+            "--fields", "NAME,UUID,TYPE,DEVICE", "connection", "show",
+        ])
         if code:
             raise RuntimeError(f"Не удалось получить профили NetworkManager: {output}")
         profiles = []
-        for line in output.splitlines()[1:]:
+        for line in output.splitlines():
             fields = _split_terse(line)
             if len(fields) < 4:
                 continue
