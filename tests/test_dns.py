@@ -27,14 +27,14 @@ class FakeManager:
 
 class DNSManagerTests(unittest.TestCase):
     def test_production_profiles_are_rejected(self):
-        for profile in ("Wired connection 1", "DOD"):
+        for profile in ("custom-wired-profile", "custom-wifi-profile"):
             with self.subTest(profile=profile):
                 with self.assertRaises(ValueError):
                     DNSManager(profiles=(profile,))
 
     def test_unknown_test_profile_is_rejected(self):
         with self.assertRaises(ValueError):
-            DNSManager(profiles=("ADGuard-DNS-TEST-WIFI-SECURE",))
+            DNSManager(profiles=("unapproved-user-profile",))
 
     def test_dry_run_never_changes_network(self):
         calls = []
