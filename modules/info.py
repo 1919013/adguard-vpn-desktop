@@ -89,6 +89,9 @@ def build_info_tab(vpn: VPNService | None = None):
     row.pack_start(check, False, False, 0)
     row.pack_start(update, False, False, 0)
     row.pack_start(install, False, False, 0)
+    cli_installed = shutil.which("adguardvpn-cli") is not None
+    update.set_sensitive(cli_installed)
+    install.set_sensitive(not cli_installed)
 
     warning = Gtk.Label(
         label="Очистка кэша и удаление пользовательских данных не предлагаются: "
