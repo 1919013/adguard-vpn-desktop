@@ -14,6 +14,8 @@ class AutostartManager:
         config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         self.directory = config_home / "autostart"
         self.entry_path = entry_path or self.directory / "adguard-vpn-desktop.desktop"
+        if entry_path is not None:
+            self.directory = self.entry_path.parent
         self.main_path = (main_path or Path(__file__).resolve().parents[1] / "main.py").resolve()
 
     def enabled(self) -> bool:
