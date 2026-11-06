@@ -33,6 +33,7 @@ class NetworkDiagnostics:
                 "nmcli", "--colors", "no", "--fields",
                 "GENERAL.DEVICE,IP4.DNS,IP6.DNS", "device", "show",
             ],
+            "resolv_conf": ["cat", "/etc/resolv.conf"],
         }
         result = {}
         for key, command in commands.items():
