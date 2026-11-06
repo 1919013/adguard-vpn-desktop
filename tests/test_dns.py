@@ -86,6 +86,20 @@ class DNSManagerTests(unittest.TestCase):
             os.chmod(manager.backup_file, 0o600)
             self.assertEqual(manager.validate_backup(), data)
 
+    def test_backup_is_private_and_never_overwritten(self):
+        def runner(command, timeout=15):
+            if "connection" in command and "show" in command:
+                fields = command[command.index("--fields") + 1].split(",")
+                return 0, "\n".join(f"{field}:" for field in fields)
+            return 0, ""
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=runner)
+            path = manager.create_backup()
+            self.assertTrue(path.is_file())
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+            with self.assertRaisesRegex(DNSManagerError, "overwrite is forbidden"):
+                manager.create_backup()
+
     def test_dns_lock_rejects_insecure_existing_lock_file(self):
         with tempfile.TemporaryDirectory() as directory:
             manager = DNSManager(state_dir=directory, runner=lambda *a, **k: (0, ""))
