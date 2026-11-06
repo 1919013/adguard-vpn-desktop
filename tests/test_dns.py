@@ -26,8 +26,8 @@ class FakeManager:
 
 
 class DNSManagerTests(unittest.TestCase):
-    def test_production_profiles_are_rejected(self):
-        for profile in ("Wired connection 1", "DOD"):
+    def test_unknown_profiles_are_rejected(self):
+        for profile in ("custom-wired-profile", "personal-wifi-profile"):
             with self.subTest(profile=profile):
                 with self.assertRaises(ValueError):
                     DNSManager(profiles=(profile,))
