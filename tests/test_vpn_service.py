@@ -29,6 +29,21 @@ class VPNServiceTests(unittest.TestCase):
         self.assertEqual(service.set_bound_interface("bad name")[0], 2)
         self.assertEqual(len(calls), 1)
 
+    def test_reads_current_outbound_interface(self):
+        service = VPNService(lambda args, timeout=25: (
+            0, "Mode: tun\nOutbound interface: wlp3s0"
+        ))
+        self.assertEqual(
+            service.bound_interface(),
+            (0, "wlp3s0", "Mode: tun\nOutbound interface: wlp3s0"),
+        )
+
+    def test_reads_unset_outbound_interface(self):
+        service = VPNService(lambda args, timeout=25: (
+            0, "Outbound interface: Not set"
+        ))
+        self.assertEqual(service.bound_interface()[0:2], (0, ""))
+
     def test_clear_bound_interface(self):
         calls = []
         service = VPNService(lambda args, timeout=25: (calls.append(args) or 0, "ok"))
