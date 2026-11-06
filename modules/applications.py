@@ -104,9 +104,6 @@ def build_applications_tab():
     status.set_xalign(0)
     root.pack_start(status, False, False, 0)
 
-    def _unused():
-        return None
-
     def refresh():
         store.clear()
         apps = discover_applications()
