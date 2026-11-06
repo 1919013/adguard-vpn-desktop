@@ -86,6 +86,15 @@ class DNSManagerTests(unittest.TestCase):
             os.chmod(manager.backup_file, 0o600)
             self.assertEqual(manager.validate_backup(), data)
 
+    def test_dns_lock_rejects_insecure_existing_lock_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=lambda *a, **k: (0, ""))
+            manager._ensure_state_dir()
+            manager.lock_file.write_text("", encoding="utf-8")
+            os.chmod(manager.lock_file, 0o644)
+            with self.assertRaisesRegex(DNSManagerError, "permissions must be 0600"):
+                manager._locked()
+
     def test_backup_creation_respects_dns_operation_lock(self):
         with tempfile.TemporaryDirectory() as directory:
             manager = DNSManager(state_dir=directory, runner=lambda *a, **k: (0, ""))
