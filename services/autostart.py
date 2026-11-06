@@ -118,7 +118,7 @@ class VPNCLIAutostartManager:
             self.directory, self.entry_path,
             "AdGuard VPN CLI",
             "Connect AdGuard VPN at desktop login and keep reconnecting",
-            [binary, "connect", "--boot"],
+            [binary, "connect", "-y", "--boot"],
         )
 
     def disable(self) -> bool:
