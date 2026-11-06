@@ -31,7 +31,7 @@ The UI must not execute operating-system commands directly. System operations ar
 - Never commit credentials, private keys or local DNS snapshots.
 
 ## Status
-VPN connection and server list are implemented. Other features are under development; per-application routing is not yet implemented.
+VPN connection, server list, dynamic NetworkManager discovery, documented single-interface VPN binding, CLI maintenance controls, diagnostics, GUI autostart and HTML help are being implemented. Per-application routing and production DNS management are not yet implemented.
 
 ## License
 No license has been selected yet. Until one is added, this repository does not grant permission to redistribute or modify the project.
