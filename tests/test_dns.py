@@ -86,6 +86,21 @@ class DNSManagerTests(unittest.TestCase):
             os.chmod(manager.backup_file, 0o600)
             self.assertEqual(manager.validate_backup(), data)
 
+    def test_apply_refuses_to_change_network_without_backup(self):
+        calls = []
+        def runner(command, timeout=15):
+            calls.append(command)
+            if command[:2] == ["adguardvpn-cli", "status"]:
+                return 0, "Connected to TEST in TUN mode, running on tun0"
+            if "connection" in command and "show" in command:
+                return 0, ""
+            return 0, ""
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=runner)
+            with self.assertRaises(DNSManagerError):
+                manager.apply_adguard_dns()
+            self.assertFalse(any("modify" in command for command in calls))
+
     def test_dns_constants(self):
         self.assertEqual(ADGUARD_DNS, ("46.243.231.30", "46.243.231.31"))
 
