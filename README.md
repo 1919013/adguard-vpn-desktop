@@ -2,7 +2,7 @@
 
 Independent community graphical interface for the official AdGuard VPN CLI on Linux. This project is not an AdGuard product and is not affiliated with AdGuard Software Ltd.
 
-> Work in progress. This repository currently contains a scaffold, not a replacement for the installed application.
+> Work in progress. This is an independent community GUI for the official AdGuard VPN CLI, not an AdGuard product.
 
 ## Goals
 - Connect to and disconnect from AdGuard VPN CLI.
