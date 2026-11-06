@@ -110,7 +110,7 @@ class VPNCLIAutostartManager:
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError(f"Не удалось проверить поддержку параметра --boot: {exc}") from exc
         help_text = result.stdout or ""
-        if "--boot" not in help_text:
+        if result.returncode != 0 or "--boot" not in help_text:
             raise RuntimeError(
                 "Установленная версия AdGuard VPN CLI не подтвердила поддержку --boot. "
                 "Автозагрузка VPN не настроена."
