@@ -15,7 +15,7 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
 
     network = network or NetworkManagerService()
     vpn = vpn or VPNService()
-    root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7)
     root.set_border_width(14)
 
     title = Gtk.Label()
@@ -24,17 +24,41 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
     root.pack_start(title, False, False, 0)
 
     note = Gtk.Label(
-        label="Устройства обнаруживаются автоматически. AdGuard VPN CLI поддерживает "
-              "привязку исходящего VPN-соединения к одному сетевому интерфейсу. "
-              "Это настройка CLI, а не изменение профиля NetworkManager."
+        label="Устройства и профили обнаруживаются автоматически. AdGuard VPN CLI "
+              "поддерживает привязку исходящего VPN-соединения к одному интерфейсу. "
+              "Виртуальные VPN-туннели не предлагаются как исходящие интерфейсы."
     )
     note.set_xalign(0)
     note.set_line_wrap(True)
     root.pack_start(note, False, False, 0)
 
+    devices_store = Gtk.ListStore(str, str, str, str)
+    profiles_store = Gtk.ListStore(str, str, str)
     combo = Gtk.ComboBoxText()
     combo.set_hexpand(True)
     root.pack_start(combo, False, False, 0)
+
+    def add_table(parent, heading, store, columns):
+        label = Gtk.Label()
+        label.set_markup(f"<b>{heading}</b>")
+        label.set_xalign(0)
+        parent.pack_start(label, False, False, 0)
+        view = Gtk.TreeView(model=store)
+        for index, column_title in enumerate(columns):
+            renderer = Gtk.CellRendererText()
+            column = Gtk.TreeViewColumn(column_title, renderer, text=index)
+            column.set_resizable(True)
+            view.append_column(column)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_min_content_height(105)
+        scroll.set_vexpand(True)
+        scroll.add(view)
+        parent.pack_start(scroll, True, True, 0)
+
+    add_table(root, "Обнаруженные устройства", devices_store,
+              ("Интерфейс", "Тип", "Состояние", "Активный профиль"))
+    add_table(root, "Профили NetworkManager", profiles_store,
+              ("Профиль", "Тип", "Активное устройство"))
 
     status = Gtk.Label(label="Нажмите «Обновить список».")
     status.set_xalign(0)
@@ -50,42 +74,6 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
     buttons.pack_start(apply, False, False, 0)
     buttons.pack_start(clear, False, False, 0)
 
-    def show_error(title_text: str, detail: str):
-        dialog = Gtk.MessageDialog(
-            transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
-            flags=Gtk.DialogFlags.MODAL,
-            message_type=Gtk.MessageType.ERROR,
-            buttons=Gtk.ButtonsType.CLOSE,
-            text=title_text,
-        )
-        dialog.format_secondary_text(detail)
-        dialog.run()
-        dialog.destroy()
-
-    def refresh_list(_button=None):
-        refresh.set_sensitive(False)
-        apply.set_sensitive(False)
-        status.set_text("Обнаружение устройств NetworkManager…")
-        def worker():
-            try:
-                devices = network.devices()
-                error = None
-            except Exception as exc:
-                devices, error = [], str(exc)
-            GLib.idle_add(finish_refresh, devices, error)
-        def finish_refresh(devices, error):
-            combo.remove_all()
-            for item in devices:
-                label = f"{item['name']} — {item['type']} ({item['state']})"
-                combo.append(item["name"], label)
-            if devices:
-                combo.set_active(0)
-            status.set_text(error or f"Обнаружено интерфейсов: {len(devices)}")
-            refresh.set_sensitive(True)
-            apply.set_sensitive(bool(devices))
-            return False
-        threading.Thread(target=worker, daemon=True).start()
-
     def confirm(message: str, action):
         dialog = Gtk.MessageDialog(
             transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
@@ -100,6 +88,51 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
         dialog.destroy()
         if response == Gtk.ResponseType.OK:
             action()
+
+    def refresh_list(_button=None):
+        refresh.set_sensitive(False)
+        apply.set_sensitive(False)
+        status.set_text("Обнаружение устройств и профилей NetworkManager…")
+        def worker():
+            try:
+                snapshot = network.snapshot()
+                error = None
+            except Exception as exc:
+                snapshot, error = {"devices": [], "profiles": []}, str(exc)
+            GLib.idle_add(finish_refresh, snapshot, error)
+        def finish_refresh(snapshot, error):
+            devices_store.clear()
+            profiles_store.clear()
+            combo.remove_all()
+            candidates = []
+            for item in snapshot["devices"]:
+                devices_store.append([
+                    item["name"], item["type"], item["state"], item["connection"]
+                ])
+                kind = item["type"].lower()
+                if kind not in {"tun", "wireguard", "loopback", "vpn"}:
+                    candidates.append(item)
+            for item in candidates:
+                combo.append(item["name"],
+                             f"{item['name']} — {item['type']} ({item['state']})")
+            for item in snapshot["profiles"]:
+                profiles_store.append([
+                    item["name"], item["type"], item["device"]
+                ])
+            if candidates:
+                combo.set_active(0)
+            status.set_text(
+                error or (
+                    f"Устройств: {len(snapshot['devices'])}; "
+                    f"профилей: {len(snapshot['profiles'])}; "
+                    f"кандидатов для привязки: {len(candidates)}"
+                )
+            )
+            refresh.set_sensitive(True)
+            apply.set_sensitive(bool(candidates))
+            clear.set_sensitive(True)
+            return False
+        threading.Thread(target=worker, daemon=True).start()
 
     def run_command(label: str, command):
         for button in (refresh, apply, clear):
@@ -127,7 +160,7 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
         confirm(
             f"AdGuard VPN CLI будет настроен использовать интерфейс {selected} "
             "для исходящего VPN-соединения. Настройки NetworkManager не изменяются. "
-            "При недоступности выбранного интерфейса VPN может не подключиться.",
+            "Если интерфейс отключится, VPN может потерять соединение.",
             lambda: run_command(
                 f"Привязка к {selected}",
                 lambda: vpn.set_bound_interface(selected),
@@ -144,6 +177,5 @@ def build_interfaces_tab(network: NetworkManagerService | None = None,
     refresh.connect("clicked", refresh_list)
     apply.connect("clicked", lambda _button: do_apply())
     clear.connect("clicked", lambda _button: do_clear())
-    clear.set_sensitive(True)
     refresh_list()
     return root
