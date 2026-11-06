@@ -300,7 +300,13 @@ class DNSManager:
                 raise DNSManagerError(
                     "Test profiles must be inactive: " + ", ".join(active_targets)
                 )
-            backup = self.validate_backup()
+            try:
+                backup = self.validate_backup()
+            except DNSManagerError as exc:
+                raise DNSManagerError(
+                    "A valid DNS backup is required before applying changes. "
+                    "Create a backup and validate it first. " + str(exc)
+                ) from exc
             for profile in self.profiles:
                 current_settings = self._read_settings(profile, BACKUP_FIELDS)
                 saved_settings = backup["profiles"][profile]
