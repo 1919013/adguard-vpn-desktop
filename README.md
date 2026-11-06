@@ -26,12 +26,13 @@ The UI must not execute operating-system commands directly. System operations ar
 ## Safety
 - Never change active NetworkManager profiles without explicit user consent.
 - DNS changes require a validated backup and tested rollback.
-- Develop DNS behavior on a dedicated test profile first.
 - Do not claim split tunneling is ready until routing, DNS and IPv6 are verified.
 - Never commit credentials, private keys or local DNS snapshots.
 
 ## Status
-VPN connection, server list, dynamic NetworkManager discovery, documented single-interface VPN binding, CLI maintenance controls, diagnostics, separate GUI and VPN CLI login autostart, and HTML help are being implemented. Per-application routing and production DNS management are not yet implemented.
+VPN connection, server list, dynamic NetworkManager discovery, documented single-interface VPN binding, CLI maintenance controls, diagnostics, separate GUI and VPN CLI login autostart, and HTML help are implemented in the current development branch. Per-application routing and production DNS management are not yet implemented.
+
+The official CLI documents a custom `SCRIPT` tunnel-routing mode and native DNS configuration commands. Their lifecycle and restoration semantics are being validated before the GUI relies on them. See [routing and DNS design notes](docs/en/routing-and-dns-design.md).
 
 ## License
 No license has been selected yet. Until one is added, this repository does not grant permission to redistribute or modify the project.
