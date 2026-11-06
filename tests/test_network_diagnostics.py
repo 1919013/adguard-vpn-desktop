@@ -10,6 +10,10 @@ class NetworkDiagnosticsTests(unittest.TestCase):
             "addresses": ["ip", "-brief", "address"],
             "ipv4_default_route": ["ip", "-4", "route", "show", "default"],
             "ipv6_default_route": ["ip", "-6", "route", "show", "default"],
+            "ipv4_route_probe": ["ip", "-4", "route", "get", "1.1.1.1"],
+            "ipv6_route_probe": [
+                "ip", "-6", "route", "get", "2606:4700:4700::1111",
+            ],
             "dns_by_device": [
                 "nmcli", "--colors", "no", "--fields",
                 "GENERAL.DEVICE,IP4.DNS,IP6.DNS", "device", "show",
