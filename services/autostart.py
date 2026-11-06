@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 import os
-import shlex
+import sys
 import tempfile
 from pathlib import Path
+
+
+def _desktop_quote(value: str) -> str:
+    """Quote one argument according to the Desktop Entry Exec field rules."""
+    value = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+    return '"' + value + '"'
 
 
 class AutostartManager:
@@ -25,8 +31,8 @@ class AutostartManager:
         if not self.main_path.is_file():
             raise FileNotFoundError(f"Не найден файл запуска приложения: {self.main_path}")
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        python = shlex.quote(os.environ.get("PYTHON", "python3"))
-        script = shlex.quote(str(self.main_path))
+        python = _desktop_quote(sys.executable or "python3")
+        script = _desktop_quote(str(self.main_path))
         content = (
             "[Desktop Entry]\n"
             "Type=Application\n"
