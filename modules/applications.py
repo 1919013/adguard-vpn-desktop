@@ -37,6 +37,7 @@ def discover_applications() -> list[dict[str, str]]:
                 in_entry = False
                 name = ""
                 executable = ""
+                entry_type = ""
                 hidden = False
                 for line in lines:
                     line = line.strip()
@@ -49,13 +50,15 @@ def discover_applications() -> list[dict[str, str]]:
                     if not in_entry or "=" not in line:
                         continue
                     key, value = line.split("=", 1)
-                    if key == "Name" and not name:
+                    if key == "Type":
+                        entry_type = value.strip()
+                    elif key == "Name" and not name:
                         name = value.strip()
                     elif key == "Exec":
                         executable = value.strip()
                     elif key in ("NoDisplay", "Hidden") and value.strip().lower() == "true":
                         hidden = True
-                if name and executable and not hidden:
+                if name and executable and not hidden and entry_type == "Application":
                     found.setdefault(str(path), {
                         "name": name, "exec": executable, "desktop_file": str(path)
                     })
