@@ -15,19 +15,37 @@ INSTALL_COMMAND = (
 )
 
 
-def launch_official_installer() -> tuple[bool, str]:
-    """Open the official release installer in a terminal for interactive sudo."""
-    terminal = shutil.which("x-terminal-emulator") or shutil.which("gnome-terminal") \
-        or shutil.which("xfce4-terminal") or shutil.which("konsole") or shutil.which("xterm")
+def _terminal():
+    return (
+        shutil.which("x-terminal-emulator")
+        or shutil.which("gnome-terminal")
+        or shutil.which("xfce4-terminal")
+        or shutil.which("konsole")
+        or shutil.which("xterm")
+    )
+
+
+def _launch_interactive(command: str) -> tuple[bool, str]:
+    terminal = _terminal()
     if not terminal:
-        return False, "Не найден эмулятор терминала. Используйте официальную инструкцию установки."
-    shell_command = INSTALL_COMMAND + "; printf '\\nУстановка завершена. Нажмите Enter для закрытия.'; read -r"
+        return False, "Не найден эмулятор терминала. Запустите официальную команду вручную."
+    shell_command = command + "; printf '\\nОперация завершена. Нажмите Enter для закрытия.'; read -r"
     try:
         subprocess.Popen([terminal, "-e", "sh", "-lc", shell_command],
                          start_new_session=True, close_fds=True)
-        return True, "Официальный установщик запущен в отдельном терминале."
+        return True, "Команда запущена в отдельном терминале. При необходимости введите пароль администратора там."
     except OSError as exc:
         return False, str(exc)
+
+
+def launch_official_installer() -> tuple[bool, str]:
+    """Open the official release installer in a terminal for interactive sudo."""
+    return _launch_interactive(INSTALL_COMMAND)
+
+
+def launch_cli_updater() -> tuple[bool, str]:
+    """Run the CLI's built-in updater in a terminal so sudo prompts stay visible."""
+    return _launch_interactive("adguardvpn-cli update -v")
 
 
 def build_info_tab(vpn: VPNService | None = None):
@@ -103,7 +121,6 @@ def build_info_tab(vpn: VPNService | None = None):
 
     def do_check(_button):
         def operation():
-            import shutil
             path = shutil.which("adguardvpn-cli")
             if not path:
                 return "AdGuard VPN CLI не найден в PATH.\nИспользуйте кнопку установки."
@@ -123,14 +140,15 @@ def build_info_tab(vpn: VPNService | None = None):
             text="Обновить AdGuard VPN CLI?",
         )
         dialog.format_secondary_text(
-            "Будет вызвана официальная команда adguardvpn-cli update -y. "
-            "Обновление может потребовать административных прав и прервать VPN-подключение."
+            "Откроется отдельный терминал с официальной командой "
+            "adguardvpn-cli update -v. Там будут видны запросы пароля и ход обновления."
         )
         dialog.add_button("Обновить", Gtk.ResponseType.OK)
         response = dialog.run()
         dialog.destroy()
         if response == Gtk.ResponseType.OK:
-            run_async("Обновление AdGuard VPN CLI", vpn.update)
+            ok, message = launch_cli_updater()
+            set_output(message)
 
     def do_install(_button):
         dialog = Gtk.MessageDialog(
