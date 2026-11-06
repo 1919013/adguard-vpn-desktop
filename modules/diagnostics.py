@@ -5,13 +5,16 @@ import shutil
 import threading
 
 from core.vpn import VPNService
+from services.network_diagnostics import NetworkDiagnostics
 from services.network_manager import NetworkManagerService
 
 
 def collect_diagnostics(vpn: VPNService | None = None,
-                        network: NetworkManagerService | None = None) -> str:
+                        network: NetworkManagerService | None = None,
+                        network_diagnostics: NetworkDiagnostics | None = None) -> str:
     vpn = vpn or VPNService()
     network = network or NetworkManagerService()
+    network_diagnostics = network_diagnostics or NetworkDiagnostics()
     lines = ["ДИАГНОСТИКА ADGUARD VPN DESKTOP", ""]
     executable = shutil.which("adguardvpn-cli")
     lines.append("AdGuard VPN CLI: " + (executable or "не найден в PATH"))
@@ -33,10 +36,27 @@ def collect_diagnostics(vpn: VPNService | None = None,
             )
     except Exception as exc:
         lines.extend(["", "Ошибка чтения NetworkManager:", str(exc)])
+
+    lines.extend(["", "МАРШРУТЫ И DNS"])
+    try:
+        details = network_diagnostics.collect()
+        labels = {
+            "addresses": "IP-адреса интерфейсов",
+            "ipv4_default_route": "Маршрут IPv4 по умолчанию",
+            "ipv6_default_route": "Маршрут IPv6 по умолчанию",
+            "dns_by_device": "DNS, настроенные в NetworkManager",
+        }
+        for key, label in labels.items():
+            result_code, output = details.get(key, (1, "Нет данных"))
+            lines.extend(["", label + f" (код {result_code}):", output or "Нет данных"])
+    except Exception as exc:
+        lines.extend(["", "Не удалось прочитать маршруты и DNS:", str(exc)])
+
     lines.extend([
         "",
-        "Проверка только читает состояние. Маршруты, DNS и firewall не изменялись.",
-        "Это не полноценная проверка DNS/IPv4/IPv6-утечек.",
+        "Диагностика только читает локальные настройки. Маршруты, DNS и firewall не изменялись.",
+        "Отображение DNS и маршрутов не доказывает отсутствие утечек. "
+        "Внешние DNS, IPv4 и IPv6 leak tests здесь не выполняются.",
     ])
     return "\n".join(lines)
 
