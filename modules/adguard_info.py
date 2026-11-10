@@ -1,30 +1,27 @@
-"""Management panel for the separate AdGuard CLI ad blocker (adguard-cli).
-
-This module deliberately does not call adguardvpn-cli: the two products have
-different executables and responsibilities.
-"""
+"""AdGuard VPN CLI management (not the separate AdGuard ad blocker CLI)."""
 from __future__ import annotations
 
 import os
 import shutil
 import subprocess
 import tempfile
-import threading
 import urllib.request
 from pathlib import Path
 
-INSTALLER_URL = "https://raw.githubusercontent.com/AdguardTeam/AdGuardCLI/release/install.sh"
+INSTALLER_URL = "https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/HEAD/scripts/release/install.sh"
+AUTOSTART_NAME = "adguardvpn-cli.desktop"
 
 
-def run_adguard(args: list[str], timeout: int = 90) -> tuple[int, str]:
+def run_vpn(args: list[str], timeout: int = 90) -> tuple[int, str]:
     try:
         result = subprocess.run(
-            ["adguard-cli", *args], text=True, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, timeout=timeout, check=False,
+            ["adguardvpn-cli", *args], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=timeout, check=False,
         )
         return result.returncode, result.stdout.strip()
     except FileNotFoundError:
-        return 127, "Команда adguard-cli не найдена. AdGuard CLI не установлен."
+        return 127, "Команда adguardvpn-cli не найдена. Установите официальный AdGuard VPN CLI."
     except subprocess.TimeoutExpired:
         return 124, "Операция превысила допустимое время ожидания."
     except OSError as exc:
@@ -32,184 +29,235 @@ def run_adguard(args: list[str], timeout: int = 90) -> tuple[int, str]:
 
 
 def installed() -> bool:
-    return shutil.which("adguard-cli") is not None
+    return shutil.which("adguardvpn-cli") is not None
 
 
 def get_status() -> str:
     if not installed():
-        return "AdGuard CLI не обнаружен (исполняемый файл adguard-cli отсутствует)."
-    version_code, version = run_adguard(["--version"], timeout=10)
-    status_code, status = run_adguard(["status"], timeout=20)
+        return "AdGuard VPN CLI не обнаружен (adguardvpn-cli отсутствует в PATH)."
+    version_code, version = run_vpn(["--version"], timeout=10)
+    status_code, status = run_vpn(["status"], timeout=20)
     return "\n".join([
-        "AdGuard CLI (блокировщик рекламы)",
+        "AdGuard VPN CLI",
         "Версия: " + (version if version_code == 0 else "не удалось определить"),
         "Состояние:",
-        status if status else ("Код завершения: " + str(status_code)),
+        status if status else f"Команда status завершилась с кодом {status_code}",
     ])
 
 
-def install_or_update() -> tuple[int, str]:
-    """Download the official release installer over HTTPS, then invoke via polkit."""
+def install_official() -> tuple[int, str]:
+    """Fetch the official release installer over HTTPS and run it as the user.
+
+    The official script requests elevation itself when required. It is not
+    piped to a shell, and the downloaded temporary file is removed afterwards.
+    """
     try:
-        request = urllib.request.Request(
-            INSTALLER_URL, headers={"User-Agent": "ADGuard-VPN-Desktop"}
-        )
+        request = urllib.request.Request(INSTALLER_URL, headers={"User-Agent": "ADGuard-VPN-Desktop"})
         with urllib.request.urlopen(request, timeout=30) as response:
             if response.status != 200:
                 return 1, f"Сервер установки вернул HTTP {response.status}."
             script = response.read(2_000_001)
-        if len(script) > 2_000_000:
-            return 1, "Скрипт установки неожиданно велик; выполнение отменено."
-        if not script.startswith(b"#!") or b"AdGuard" not in script[:200_000]:
-            return 1, "Полученный файл не похож на официальный скрипт AdGuard; выполнение отменено."
-        with tempfile.NamedTemporaryFile(prefix="adguard-cli-install-", suffix=".sh", delete=False) as stream:
+        if len(script) > 2_000_000 or not script.startswith(b"#!"):
+            return 1, "Получен некорректный или слишком большой скрипт установки."
+        with tempfile.NamedTemporaryFile(prefix="adguardvpn-cli-install-", suffix=".sh", delete=False) as stream:
             stream.write(script)
-            script_path = Path(stream.name)
+            path = Path(stream.name)
         try:
-            result = subprocess.run(
-                ["pkexec", "sh", str(script_path), "-v"],
-                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                timeout=900, check=False,
-            )
+            result = subprocess.run(["sh", str(path), "-v"], text=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, timeout=900, check=False)
             return result.returncode, result.stdout.strip()
         finally:
-            script_path.unlink(missing_ok=True)
-    except FileNotFoundError:
-        return 127, "Не найден pkexec. Установите AdGuard CLI вручную по официальной инструкции."
+            path.unlink(missing_ok=True)
     except Exception as exc:
         return 1, str(exc)
 
 
+def check_update() -> tuple[int, str]:
+    return run_vpn(["check-update"], timeout=180)
+
+
+def update_vpn() -> tuple[int, str]:
+    return run_vpn(["update", "-v", "-y"], timeout=900)
+
+
+def connect_vpn() -> tuple[int, str]:
+    # --boot makes the CLI wait for network availability during startup.
+    return run_vpn(["connect", "--boot"], timeout=300)
+
+
+def disconnect_vpn() -> tuple[int, str]:
+    return run_vpn(["disconnect"], timeout=90)
+
+
+def _xdg_path(variable: str, fallback: str) -> Path:
+    return Path(os.environ.get(variable, Path.home() / fallback)).expanduser()
+
+
 def clear_cache() -> tuple[int, str]:
-    cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    target = cache_home / "adguard-cli"
+    target = _xdg_path("XDG_CACHE_HOME", ".cache") / "adguardvpn-cli"
+    if target.is_symlink():
+        return 2, f"Кэш является символической ссылкой; удаление отменено: {target}"
     if not target.exists():
-        return 0, f"Каталог кэша не найден: {target}\nНечего очищать."
-    if not target.is_dir() or target.is_symlink():
-        return 2, f"Ожидался обычный каталог кэша; операция отменена: {target}"
+        return 0, f"Каталог кэша не найден: {target}. Нечего очищать."
+    if not target.is_dir():
+        return 2, f"Ожидался каталог кэша; удаление отменено: {target}"
     shutil.rmtree(target)
-    return 0, f"Кэш удалён: {target}"
+    return 0, f"Кэш AdGuard VPN CLI очищен: {target}"
 
 
 def clear_user_data() -> tuple[int, str]:
-    """Remove only XDG-scoped per-user AdGuard CLI data/config directories."""
-    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
-    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    targets = [data_home / "adguard-cli", config_home / "adguard-cli"]
-    removed = []
+    """Delete only standard per-user XDG state/config/cache locations."""
+    targets = [
+        _xdg_path("XDG_DATA_HOME", ".local/share") / "adguardvpn-cli",
+        _xdg_path("XDG_CONFIG_HOME", ".config") / "adguardvpn-cli",
+        _xdg_path("XDG_CACHE_HOME", ".cache") / "adguardvpn-cli",
+    ]
     for target in targets:
         if target.is_symlink():
-            return 2, f"Обнаружена символическая ссылка; удаление отменено: {target}"
-        if target.exists():
-            if not target.is_dir():
-                return 2, f"Ожидался каталог; удаление отменено: {target}"
+            return 2, f"Обнаружена символическая ссылка; операция отменена: {target}"
+        if target.exists() and not target.is_dir():
+            return 2, f"Ожидался каталог; операция отменена: {target}"
+    removed = []
+    for target in targets:
+        if target.is_dir():
             shutil.rmtree(target)
             removed.append(str(target))
     if not removed:
-        return 0, "Пользовательские каталоги AdGuard CLI не найдены."
-    return 0, "Удалены пользовательские данные:\n" + "\n".join(removed)
+        return 0, "Пользовательские данные AdGuard VPN CLI не найдены."
+    return 0, "Удалены каталоги пользовательских данных:\n" + "\n".join(removed)
 
 
-def set_service_autostart(enabled: bool) -> tuple[int, str]:
-    return run_adguard(["install-service"] + ([] if enabled else ["-u"]), timeout=120)
+def _desktop_quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def autostart_path() -> Path:
+    return _xdg_path("XDG_CONFIG_HOME", ".config") / "autostart" / AUTOSTART_NAME
+
+
+def enable_autostart() -> tuple[int, str]:
+    binary = shutil.which("adguardvpn-cli")
+    if not binary:
+        return 127, "Не найден adguardvpn-cli."
+    target = autostart_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = (
+        "[Desktop Entry]\nType=Application\n"
+        "Name=AdGuard VPN CLI\nComment=Connect AdGuard VPN when the desktop session starts\n"
+        f"Exec={_desktop_quote(binary)} connect --boot\n"
+        "Terminal=false\nX-GNOME-Autostart-enabled=true\n"
+    )
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(content, encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(target)
+    return 0, f"Автозапуск включён для входа в графическую сессию: {target}"
+
+
+def disable_autostart() -> tuple[int, str]:
+    target = autostart_path()
+    if target.is_symlink():
+        return 2, f"Файл автозапуска является символической ссылкой; удаление отменено: {target}"
+    if target.exists():
+        target.unlink()
+        return 0, f"Автозапуск AdGuard VPN CLI отключён: {target}"
+    return 0, "Автозапуск AdGuard VPN CLI уже отключён."
 
 
 def build_adguard_info_tab():
     import gi
     gi.require_version("Gtk", "3.0")
     from gi.repository import Gtk, GLib
+    import threading
 
-    root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+    root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=9)
     root.set_border_width(14)
-
-    heading = Gtk.Label()
-    heading.set_markup("<b>Инфо ADGuard</b>")
-    heading.set_xalign(0)
-    root.pack_start(heading, False, False, 0)
+    title = Gtk.Label()
+    title.set_markup("<b>Инфо ADGuard</b>")
+    title.set_xalign(0)
+    root.pack_start(title, False, False, 0)
 
     note = Gtk.Label(
-        label=("Здесь управляется отдельный AdGuard CLI (adguard-cli) — блокировщик "
-               "рекламы. Это не AdGuard VPN CLI (adguardvpn-cli), которым управляет "
-               "вкладка «Подключение». Автоматическая фильтрация AdGuard CLI может "
-               "конфликтовать с VPN CLI в режиме TUN."),
+        label=("Управление официальным AdGuard VPN CLI (adguardvpn-cli), "
+               "которым пользуется эта графическая оболочка. Это не отдельный "
+               "AdGuard CLI — блокировщик рекламы."),
         xalign=0,
     )
     note.set_line_wrap(True)
     root.pack_start(note, False, False, 0)
 
-    status = Gtk.TextView()
-    status.set_editable(False)
-    status.set_cursor_visible(False)
-    status.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-    status.get_buffer().set_text("Проверка наличия AdGuard CLI…")
-    scroller = Gtk.ScrolledWindow()
-    scroller.set_vexpand(True)
-    scroller.set_min_content_height(180)
-    scroller.add(status)
-    root.pack_start(scroller, True, True, 0)
+    view = Gtk.TextView()
+    view.set_editable(False)
+    view.set_cursor_visible(False)
+    view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+    view.get_buffer().set_text("Проверка наличия AdGuard VPN CLI…")
+    scroll = Gtk.ScrolledWindow()
+    scroll.set_vexpand(True)
+    scroll.set_min_content_height(160)
+    scroll.add(view)
+    root.pack_start(scroll, True, True, 0)
 
-    buttons: list[Gtk.Widget] = []
+    buttons = []
 
-    def show_result(text: str):
-        status.get_buffer().set_text(text)
+    def show(text):
+        view.get_buffer().set_text(text)
 
-    def finish(result, title):
+    def finish(result, label):
+        code, output = result
         for button in buttons:
             button.set_sensitive(True)
-        code, output = result
-        show_result(f"{title}\n\nКод завершения: {code}\n{output or 'Команда выполнена без дополнительного вывода.'}")
+        show(f"{label}\n\nКод завершения: {code}\n{output or 'Команда выполнена без дополнительного вывода.'}")
         return False
 
-    def run_async(title, operation):
+    def run_async(label, operation):
         for button in buttons:
             button.set_sensitive(False)
-        show_result(title + "\n\nВыполняется…")
+        show(label + "\n\nВыполняется…")
         def worker():
             try:
                 result = operation()
             except Exception as exc:
                 result = (1, str(exc))
-            GLib.idle_add(finish, result, title)
+            GLib.idle_add(finish, result, label)
         threading.Thread(target=worker, daemon=True).start()
 
-    def confirm(title, body, operation):
+    def confirm(label, description, operation):
         dialog = Gtk.MessageDialog(
             transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
             flags=Gtk.DialogFlags.MODAL, message_type=Gtk.MessageType.WARNING,
-            buttons=Gtk.ButtonsType.CANCEL, text=title,
+            buttons=Gtk.ButtonsType.CANCEL, text=label,
         )
-        dialog.format_secondary_text(body)
+        dialog.format_secondary_text(description)
         dialog.add_button("Продолжить", Gtk.ResponseType.OK)
-        response = dialog.run()
+        answer = dialog.run()
         dialog.destroy()
-        if response == Gtk.ResponseType.OK:
-            run_async(title, operation)
+        if answer == Gtk.ResponseType.OK:
+            run_async(label, operation)
 
-    def add(parent, label, tooltip, callback):
+    def add(row, label, tooltip, callback):
         button = Gtk.Button(label=label)
         button.set_tooltip_text(tooltip)
         button.connect("clicked", lambda *_: callback())
-        parent.pack_start(button, False, False, 0)
+        row.pack_start(button, False, False, 0)
         buttons.append(button)
 
-    row1 = Gtk.Box(spacing=6)
-    row2 = Gtk.Box(spacing=6)
-    row3 = Gtk.Box(spacing=6)
-    for row in (row1, row2, row3):
+    for _ in range(4):
+        row = Gtk.Box(spacing=6)
         root.pack_start(row, False, False, 0)
-
-    add(row1, "Проверить установку", "Проверить наличие и версию adguard-cli", lambda: run_async("Состояние AdGuard CLI", lambda: (0, get_status())))
-    add(row1, "Установить / обновить", "Загрузить официальный скрипт AdGuard и запустить его через polkit", lambda: confirm("Установка или обновление AdGuard CLI", "Будет загружен официальный release-скрипт из репозитория AdguardTeam/AdGuardCLI и запущен с правами администратора.", install_or_update))
-    add(row1, "Проверить обновления", "Выполнить adguard-cli check-update", lambda: run_async("Проверка обновлений", lambda: run_adguard(["check-update"], 180)))
-
-    add(row2, "Запустить", "Включить защиту AdGuard CLI", lambda: run_async("Запуск AdGuard CLI", lambda: run_adguard(["start"])))
-    add(row2, "Остановить", "Остановить защиту AdGuard CLI", lambda: run_async("Остановка AdGuard CLI", lambda: run_adguard(["stop"])))
-    add(row2, "Обновить", "Выполнить adguard-cli update", lambda: confirm("Обновить AdGuard CLI", "Будут обновлены приложение и его компоненты.", lambda: run_adguard(["update", "-v"], 600)))
-
-    add(row3, "Включить автозапуск", "Установить системную службу AdGuard CLI", lambda: confirm("Включить автозапуск", "AdGuard CLI будет установлен как системная служба и сможет запускаться при загрузке системы.", lambda: set_service_autostart(True)))
-    add(row3, "Отключить автозапуск", "Удалить системную службу AdGuard CLI", lambda: confirm("Отключить автозапуск", "Системная служба AdGuard CLI будет удалена. Само приложение останется установленным.", lambda: set_service_autostart(False)))
-    add(row3, "Очистить кэш", "Удалить только XDG-каталог кэша adguard-cli", lambda: confirm("Очистить кэш", "Будет удалён только каталог ~/.cache/adguard-cli (или XDG_CACHE_HOME/adguard-cli). Настройки и лицензия не затрагиваются.", clear_cache))
-    add(row3, "Удалить данные пользователя", "Удалить XDG-каталоги конфигурации и данных AdGuard CLI", lambda: confirm("Удалить все пользовательские данные AdGuard CLI?", "Будут удалены только XDG_DATA_HOME/adguard-cli и XDG_CONFIG_HOME/adguard-cli. Это может удалить конфигурацию и локальные данные. Приложение в /opt не удаляется.", clear_user_data))
+        if _ == 0:
+            add(row, "Проверить установку", "Версия и состояние VPN", lambda: run_async("Состояние AdGuard VPN CLI", lambda: (0, get_status())))
+            add(row, "Установить / переустановить", "Официальный установщик AdGuard VPN CLI", lambda: confirm("Установить AdGuard VPN CLI", "Будет загружен официальный release-скрипт из репозитория AdguardTeam/AdGuardVPNCLI по HTTPS. Скрипт сам запросит необходимые права.", install_official))
+            add(row, "Проверить обновления", "adguardvpn-cli check-update", lambda: run_async("Проверка обновлений", check_update))
+        elif _ == 1:
+            add(row, "Обновить VPN CLI", "Официальная команда обновления", lambda: confirm("Обновить AdGuard VPN CLI", "Будет выполнена официальная команда adguardvpn-cli update.", update_vpn))
+            add(row, "Подключить", "Подключиться к последней или быстрой локации", lambda: run_async("Подключение AdGuard VPN", connect_vpn))
+            add(row, "Отключить", "Отключить VPN", lambda: run_async("Отключение AdGuard VPN", disconnect_vpn))
+        elif _ == 2:
+            add(row, "Включить автозапуск", "Подключать VPN при входе в графическую сессию", lambda: run_async("Включение автозапуска", enable_autostart))
+            add(row, "Отключить автозапуск", "Удалить созданный ярлык автозапуска", lambda: run_async("Отключение автозапуска", disable_autostart))
+            add(row, "Очистить кэш", "Удалить только ~/.cache/adguardvpn-cli", lambda: confirm("Очистить кэш AdGuard VPN CLI", "Будет удалён только XDG-каталог кэша adguardvpn-cli. Настройки и данные авторизации не затрагиваются.", clear_cache))
+        else:
+            add(row, "Удалить все данные пользователя", "Удалить пользовательские данные, конфигурацию и кэш", lambda: confirm("Удалить все данные AdGuard VPN CLI?", "Будут удалены только пользовательские XDG-каталоги adguardvpn-cli: данные, конфигурация и кэш. Это может удалить авторизацию и настройки. Сам исполняемый файл не удаляется.", clear_user_data))
 
     run_async("Проверка установки", lambda: (0, get_status()))
     return root
