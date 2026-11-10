@@ -113,7 +113,7 @@ def _vpn_ready():
     result = subprocess.run(["adguardvpn-cli", "config", "show"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15, check=False)
     if result.returncode:
         return False, result.stdout.strip() or "Не удалось прочитать конфигурацию VPN CLI."
-    if not re.search(r"(?:mode|режим)[^\\n]*(?:socks|socks5)", result.stdout, re.I):
+    if not re.search(r"(?:mode|режим)[^\n]*(?:socks|socks5)", result.stdout, re.I):
         return False, "Требуется режим SOCKS5. Выполните: adguardvpn-cli config set-mode SOCKS, затем подключитесь заново."
     try:
         with socket.create_connection((HOST, PORT), timeout=2):
@@ -284,7 +284,7 @@ def build_applications_tab():
 
     def select_all(*_):
         for widget in checks.values():
-            if widget.get_sensitive() and widget.get_visible():
+            if widget.get_sensitive():
                 widget.set_active(True)
     all_btn.connect("clicked", select_all)
     none_btn.connect("clicked", lambda *_: [w.set_active(False) for w in checks.values()])
