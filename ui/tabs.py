@@ -3,17 +3,18 @@ from modules.connection import build_connection_tab
 from modules.dns import build_dns_tab
 from modules.interfaces import build_interfaces_tab
 from modules.help import build_help_tab
+from modules.adguard_info import build_adguard_info_tab
 
 
 def build_tabs(notebook):
-    """Populate all implemented feature tabs."""
+    """Populate implemented feature tabs and clearly mark pending features."""
     from gi.repository import Gtk
 
     notebook.append_page(build_connection_tab(), Gtk.Label(label="Подключение"))
+    notebook.append_page(build_adguard_info_tab(), Gtk.Label(label="Инфо ADGuard"))
 
-    # These remain explicit placeholders until their feature blocks are implemented.
     for title, message in (
-        ("Приложения", "Маршрутизация отдельных приложений будет доступна после проверки возможностей AdGuard VPN CLI."),
+        ("Приложения", "Маршрутизация отдельных приложений будет добавлена отдельным блоком после проверки совместимости режимов AdGuard CLI и AdGuard VPN CLI."),
         ("Настройки", "Настройки приложения будут добавлены следующим этапом."),
     ):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
