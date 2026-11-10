@@ -151,6 +151,7 @@ def apply_routing(selected_ids, direct_paths=()):
             return 2, f"Нужен полный путь к исполняемому файлу: {raw}"
         chosen.append((p.name, shlex.quote(str(p)), "application-x-executable", False))
 
+    chosen.sort(key=lambda item: item[0].casefold())
     proxy = shutil.which("proxychains4")
     conf = _proxy_config()
     data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
@@ -158,6 +159,13 @@ def apply_routing(selected_ids, direct_paths=()):
     bin_dir = data / "adguard-vpn-desktop" / "bin"
     launcher_dir.mkdir(parents=True, exist_ok=True)
     bin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Replace only files in the private directories owned by this feature.
+    for directory in (launcher_dir, bin_dir):
+        if directory.is_symlink():
+            return 2, f"Каталог VPN-ярлыков является символической ссылкой: {directory}"
+        for previous in directory.iterdir():
+            if previous.is_file() and not previous.is_symlink():
+                previous.unlink()
     created, errors = [], []
     for index, (name, command, icon, terminal) in enumerate(chosen):
         try:
@@ -225,7 +233,7 @@ def build_applications_tab():
 
     root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     root.set_border_width(12)
-    intro = Gtk.Label(label="Выберите приложения из меню GNOME или добавьте исполняемый файл вручную. Для работы нужны AdGuard VPN CLI в режиме SOCKS5 и proxychains4. Будут созданы отдельные ярлыки; исходные ярлыки не меняются.", xalign=0)
+    intro = Gtk.Label(label="Выберите приложения из меню GNOME или добавьте исполняемый файл вручную. Для работы нужны AdGuard VPN CLI в режиме SOCKS5 и пакет proxychains4 (Debian: sudo apt install proxychains4). Будут созданы отдельные ярлыки; исходные ярлыки не меняются.", xalign=0)
     intro.set_line_wrap(True)
     root.pack_start(intro, False, False, 0)
     status = Gtk.Label(label="Загрузка приложений…", xalign=0)
