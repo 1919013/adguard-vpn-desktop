@@ -31,7 +31,23 @@ The UI must not execute operating-system commands directly. System operations ar
 - Never commit credentials, private keys or local DNS snapshots.
 
 ## Status
-Initial scaffold. Existing working code will be migrated in small, reviewable steps.
+Current development branch: `feature/large-feature-blocks` (see pull request #2).
+
+Implemented on this branch:
+- AdGuard VPN CLI connection controls and server selection.
+- AdGuard VPN CLI management: official install/update checks, connect/disconnect, user cache/data cleanup, CLI and GUI autostart.
+- Dynamic network interface discovery and CLI outbound-interface override.
+- Per-app launchers through AdGuard VPN CLI SOCKS5 + proxychains-ng. This is a TCP proxy launcher approach, not native per-process TUN routing. UDP/QUIC and sandboxed Flatpak/Snap apps are not guaranteed.
+- Browser-based help and an explicit unofficial-project disclaimer.
+
+Still pending:
+- Full production DNS design; current DNS manager is intentionally restricted to test profiles.
+- Full Russian/English localization.
+- Runtime verification on Debian 13/Cinnamon and packaging/release validation.
+
+For the per-app proxy feature on Debian, install `proxychains4`: `sudo apt install proxychains4`.
+Then switch AdGuard VPN CLI to SOCKS mode: `adguardvpn-cli config set-mode SOCKS`.
+Reconnect after changing the mode. SOCKS mode requires each selected application to be launched through its generated VPN launcher.
 
 ## License
 No license has been selected yet. Until one is added, this repository does not grant permission to redistribute or modify the project.
