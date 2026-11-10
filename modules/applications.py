@@ -125,6 +125,11 @@ def _proxy_config():
     return path
 
 
+def _desktop_exec_quote(path):
+    value = str(path).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{value}"'
+
+
 def apply_routing(selected_ids, direct_paths=()):
     if not selected_ids and not direct_paths:
         return 0, "Ничего не выбрано. Существующие VPN-ярлыки не изменены."
@@ -169,7 +174,7 @@ def apply_routing(selected_ids, direct_paths=()):
             desktop.write_text(
                 "[Desktop Entry]\nType=Application\n"
                 f"Name={name} (через AdGuard VPN)\n"
-                f"Exec={shlex.quote(str(wrapper))} %U\n"
+                f"Exec={_desktop_exec_quote(wrapper)} %U\n"
                 f"Icon={icon}\nTerminal={'true' if terminal else 'false'}\n"
                 "Categories=Network;\nStartupNotify=true\n",
                 encoding="utf-8",
