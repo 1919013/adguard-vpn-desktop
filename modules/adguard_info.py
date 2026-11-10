@@ -164,6 +164,84 @@ def disable_autostart() -> tuple[int, str]:
     return 0, "Автозапуск AdGuard VPN CLI уже отключён."
 
 
+def _gui_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _gui_desktop_content() -> str:
+    import sys
+    root = _gui_root()
+    main = root / "main.py"
+    return (
+        "[Desktop Entry]\\nType=Application\\n"
+        "Name=ADGuard VPN Desktop\\nComment=Unofficial graphical wrapper for AdGuard VPN CLI\\n"
+        f"Exec={_desktop_quote(sys.executable)} {_desktop_quote(str(main))}\\n"
+        "Terminal=false\\nCategories=Network;\\nStartupNotify=true\\n"
+    )
+
+
+def install_gui_launcher() -> tuple[int, str]:
+    target = _xdg_path("XDG_DATA_HOME", ".local/share") / "applications" / "adguard-vpn-desktop.desktop"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_gui_desktop_content(), encoding="utf-8")
+    os.chmod(target, 0o644)
+    return 0, f"Ярлык ADGuard VPN Desktop создан: {target}"
+
+
+def enable_gui_autostart() -> tuple[int, str]:
+    target = _xdg_path("XDG_CONFIG_HOME", ".config") / "autostart" / "adguard-vpn-desktop.desktop"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(_gui_desktop_content(), encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(target)
+    return 0, f"Автозапуск графической оболочки включён: {target}"
+
+
+def disable_gui_autostart() -> tuple[int, str]:
+    target = _xdg_path("XDG_CONFIG_HOME", ".config") / "autostart" / "adguard-vpn-desktop.desktop"
+    if target.is_symlink():
+        return 2, f"Файл автозапуска является символической ссылкой: {target}"
+    if target.exists():
+        target.unlink()
+        return 0, "Автозапуск ADGuard VPN Desktop отключён."
+    return 0, "Автозапуск ADGuard VPN Desktop уже отключён."
+
+
+def check_gui_update() -> tuple[int, str]:
+    root = _gui_root()
+    def git(args):
+        return subprocess.run(["git", "-C", str(root), *args], text=True, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=45, check=False)
+    if not (root / ".git").exists():
+        return 2, "Эта установка не является Git-клоном. Автоматическая проверка обновлений пока недоступна."
+    fetch = git(["fetch", "origin"])
+    if fetch.returncode:
+        return fetch.returncode, fetch.stdout.strip()
+    upstream = git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])
+    if upstream.returncode:
+        return 2, "Для текущей ветки не настроена upstream-ветка. Настройте её в Git."
+    count = git(["rev-list", "--count", "HEAD.." + upstream.stdout.strip()])
+    if count.returncode:
+        return count.returncode, count.stdout.strip()
+    return 0, f"Обновлений ADGuard VPN Desktop доступно: {count.stdout.strip()}."
+
+
+def update_gui() -> tuple[int, str]:
+    root = _gui_root()
+    if not (root / ".git").exists():
+        return 2, "Автообновление доступно только для Git-установки."
+    status = subprocess.run(["git", "-C", str(root), "status", "--porcelain"], text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20, check=False)
+    if status.returncode:
+        return status.returncode, status.stdout.strip()
+    if status.stdout.strip():
+        return 2, "В рабочей копии есть локальные изменения. Сначала сохраните или перенесите их; автоматическое обновление отменено."
+    result = subprocess.run(["git", "-C", str(root), "pull", "--ff-only"], text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180, check=False)
+    return result.returncode, result.stdout.strip()
+
+
 def build_adguard_info_tab():
     import gi
     gi.require_version("Gtk", "3.0")
@@ -241,7 +319,7 @@ def build_adguard_info_tab():
         row.pack_start(button, False, False, 0)
         buttons.append(button)
 
-    for _ in range(4):
+    for _ in range(6):
         row = Gtk.Box(spacing=6)
         root.pack_start(row, False, False, 0)
         if _ == 0:
@@ -256,6 +334,13 @@ def build_adguard_info_tab():
             add(row, "Включить автозапуск", "Подключать VPN при входе в графическую сессию", lambda: run_async("Включение автозапуска", enable_autostart))
             add(row, "Отключить автозапуск", "Удалить созданный ярлык автозапуска", lambda: run_async("Отключение автозапуска", disable_autostart))
             add(row, "Очистить кэш", "Удалить только ~/.cache/adguardvpn-cli", lambda: confirm("Очистить кэш AdGuard VPN CLI", "Будет удалён только XDG-каталог кэша adguardvpn-cli. Настройки и данные авторизации не затрагиваются.", clear_cache))
+        elif _ == 3:
+            add(row, "Установить ярлык GUI", "Добавить ADGuard VPN Desktop в меню приложений", lambda: run_async("Установка ярлыка GUI", install_gui_launcher))
+            add(row, "Автозапуск GUI: включить", "Запускать графическую оболочку при входе в систему", lambda: run_async("Автозапуск GUI", enable_gui_autostart))
+            add(row, "Автозапуск GUI: отключить", "Отключить запуск графической оболочки при входе", lambda: run_async("Отключение автозапуска GUI", disable_gui_autostart))
+        elif _ == 4:
+            add(row, "Проверить обновление GUI", "Проверить upstream-ветку Git", lambda: run_async("Проверка обновления ADGuard VPN Desktop", check_gui_update))
+            add(row, "Обновить GUI", "Обновить чистую Git-установку через git pull --ff-only", lambda: confirm("Обновить ADGuard VPN Desktop", "Будет выполнен git pull --ff-only. Обновление возможно только для чистой Git-установки с настроенной upstream-веткой.", update_gui))
         else:
             add(row, "Удалить все данные пользователя", "Удалить пользовательские данные, конфигурацию и кэш", lambda: confirm("Удалить все данные AdGuard VPN CLI?", "Будут удалены только пользовательские XDG-каталоги adguardvpn-cli: данные, конфигурация и кэш. Это может удалить авторизацию и настройки. Сам исполняемый файл не удаляется.", clear_user_data))
 
