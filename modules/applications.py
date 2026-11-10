@@ -37,13 +37,7 @@ def _resolve(tokens):
         return None, "Flatpak/Snap: proxychains не гарантирует перехват трафика внутри песочницы"
     executable = tokens[0]
     if executable == "env":
-        i = 1
-        while i < len(tokens) and "=" in tokens[i] and not tokens[i].startswith("/"):
-            i += 1
-        tokens = tokens[i:]
-        if not tokens:
-            return None, "Не удалось определить исполняемый файл"
-        executable = tokens[0]
+        return None, "Запуск через env с переменными окружения пока не поддерживается"
     resolved = executable if os.path.isabs(executable) else shutil.which(executable)
     if not resolved or not Path(resolved).is_file() or not os.access(resolved, os.X_OK):
         return None, f"Исполняемый файл не найден: {executable}"
@@ -113,7 +107,7 @@ def _vpn_ready():
     result = subprocess.run(["adguardvpn-cli", "config", "show"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15, check=False)
     if result.returncode:
         return False, result.stdout.strip() or "Не удалось прочитать конфигурацию VPN CLI."
-    if not re.search(r"(?:mode|режим)[^\n]*(?:socks|socks5)", result.stdout, re.I):
+    if not re.search(r"(?:vpn\s*)?mode\s*[:=]\s*(?:socks|socks5)\b", result.stdout, re.I):
         return False, "Требуется режим SOCKS5. Выполните: adguardvpn-cli config set-mode SOCKS, затем подключитесь заново."
     try:
         with socket.create_connection((HOST, PORT), timeout=2):
@@ -132,6 +126,8 @@ def _proxy_config():
 
 
 def apply_routing(selected_ids, direct_paths=()):
+    if not selected_ids and not direct_paths:
+        return 0, "Ничего не выбрано. Существующие VPN-ярлыки не изменены."
     ready, message = _vpn_ready()
     if not ready:
         return 2, message
@@ -210,6 +206,9 @@ def remove_routing():
     update = shutil.which("update-desktop-database")
     if update:
         subprocess.run([update, str(data / "applications")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    state = _state_file()
+    if state.exists() and not state.is_symlink():
+        state.unlink()
     return 0, f"Удалено созданных VPN-файлов: {removed}. Оригинальные приложения не затронуты."
 
 
