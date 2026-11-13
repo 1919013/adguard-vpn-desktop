@@ -7,7 +7,7 @@ import subprocess
 from typing import Iterable
 
 VALID_MODES = {"general", "selective"}
-DOMAIN_RE = re.compile(r"^(?:\*\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$")
+DOMAIN_RE = re.compile(r"^(?:\*\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$")
 
 
 class SiteExclusionError(RuntimeError):
