@@ -28,9 +28,19 @@ class RoutingError(RuntimeError):
 def cgroup_level_for_slice(cgroup_path: str, slice_name: str = APP_SLICE) -> int:
     """Return nft socket-cgroupv2 level for a named cgroup component."""
     parts = [part for part in cgroup_path.strip("/").split("/") if part]
-    if slice_name not in parts:
-        parts.append(slice_name)
-    return parts.index(slice_name) + 1
+    if slice_name in parts:
+        return parts.index(slice_name) + 1
+    # systemd-run --user --scope --slice=<name>.slice creates the named
+    # slice directly below the per-user manager (user@UID.service), not
+    # below the current GUI application's app.slice/scope.
+    manager_index = next(
+        (index for index, part in enumerate(parts)
+         if re.fullmatch(r"user@\\d+\\.service", part)),
+        None,
+    )
+    if manager_index is None:
+        raise RoutingError("Не найден cgroup пользовательского systemd-менеджера.")
+    return manager_index + 2
 
 
 def current_user_cgroup_path() -> str:
