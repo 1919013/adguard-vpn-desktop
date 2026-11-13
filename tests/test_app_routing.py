@@ -29,7 +29,8 @@ class AppRoutingPlannerTests(unittest.TestCase):
     def test_selected_only_policy_marks_only_managed_app_slice(self):
         rules = nft_ruleset("selected", 4, 3)
         self.assertIn(f"table inet {NFT_TABLE}", rules)
-        self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" meta mark set {FWMARK}', rules)
+        self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" ip daddr !=', rules)
+        self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" ip6 daddr !=', rules)
         self.assertIn('socket cgroupv2 level 2 "systemd-resolved.service" ip daddr != { 10.0.0.0/8', rules)
         self.assertIn("ip6 daddr != { fc00::/7, fe80::/10, ff00::/8 }", rules)
         self.assertNotIn(user_manager_component(), rules)
@@ -37,7 +38,8 @@ class AppRoutingPlannerTests(unittest.TestCase):
 
     def test_all_except_policy_marks_user_session_then_overrides_app_slice(self):
         rules = nft_ruleset("all_except_selected", 4, 3)
-        self.assertIn(f'socket cgroupv2 level 3 "{user_manager_component()}" meta mark set 0xAD61', rules)
+        self.assertIn(f'socket cgroupv2 level 3 "{user_manager_component()}" ip daddr !=', rules)
+        self.assertIn(f'socket cgroupv2 level 3 "{user_manager_component()}" ip6 daddr !=', rules)
         self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" meta mark set {DIRECT_MARK}', rules)
         self.assertIn("192.168.0.0/16", rules)
 
