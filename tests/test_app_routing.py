@@ -15,7 +15,7 @@ class AppRoutingPlannerTests(unittest.TestCase):
     PATH = f"/user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service/app.slice"
 
     def test_user_manager_and_future_app_slice_levels(self):
-        self.assertEqual(cgroup_level_for_component(self.PATH, "user@1000.service"), 3)
+        self.assertEqual(cgroup_level_for_component(self.PATH, user_manager_component()), 3)
         self.assertEqual(cgroup_level_for_slice(self.PATH), 4)
 
     def test_existing_app_slice_level_is_detected(self):
@@ -40,7 +40,7 @@ class AppRoutingPlannerTests(unittest.TestCase):
 
     def test_route_script_isolated_and_has_explicit_cleanup(self):
         script = route_script("selected", 4, 3)
-        self.assertIn(f'table "{ROUTE_TABLE}"', script)
+        self.assertIn(f'TABLE="{ROUTE_TABLE}"', script)
         self.assertIn("ip -6 route replace default", script)
         self.assertIn("nft -f -", script)
         self.assertIn("--cleanup", script)
