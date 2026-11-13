@@ -187,7 +187,7 @@ def apply_selection(mode: str, selected_ids, direct_paths=()):
                 f"Name={name} ({label})\n"
                 f"Exec={_desktop_quote(str(wrapper))} %U\n"
                 f"Icon={icon}\nTerminal={'true' if terminal else 'false'}\n"
-                "Categories=Network;\nStartupNotify=true\n",
+                "DBusActivatable=false\nCategories=Network;\nStartupNotify=true\n",
                 encoding="utf-8",
             )
             created.append(str(desktop))
