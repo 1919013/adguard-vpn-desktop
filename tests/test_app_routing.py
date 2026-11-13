@@ -1,6 +1,7 @@
 """Headless tests for per-application TUN routing policy generation."""
 import unittest
 import subprocess
+import os
 
 from services.app_routing import (
     APP_SLICE, DIRECT_MARK, FWMARK, NFT_TABLE, ROUTE_TABLE,
@@ -11,7 +12,7 @@ from services.app_routing import (
 
 
 class AppRoutingPlannerTests(unittest.TestCase):
-    PATH = "/user.slice/user-1000.slice/user@1000.service/app.slice"
+    PATH = f"/user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service/app.slice"
 
     def test_user_manager_and_future_app_slice_levels(self):
         self.assertEqual(cgroup_level_for_component(self.PATH, "user@1000.service"), 3)
@@ -34,7 +35,7 @@ class AppRoutingPlannerTests(unittest.TestCase):
 
     def test_all_except_policy_marks_user_session_then_overrides_app_slice(self):
         rules = nft_ruleset("all_except_selected", 4, 3)
-        self.assertIn('socket cgroupv2 level 3 "user@1000.service" meta mark set 0xAD61', rules)
+        self.assertIn(f'socket cgroupv2 level 3 "{user_manager_component()}" meta mark set 0xAD61', rules)
         self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" meta mark set {DIRECT_MARK}', rules)
 
     def test_route_script_isolated_and_has_explicit_cleanup(self):
