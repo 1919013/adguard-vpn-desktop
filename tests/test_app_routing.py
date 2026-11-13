@@ -1,48 +1,61 @@
-"""Tests for the unprivileged per-application routing planner."""
+"""Headless tests for per-application TUN routing policy generation."""
 import unittest
+
 from services.app_routing import (
-    APP_SLICE, FWMARK, NFT_TABLE, ROUTE_TABLE,
-    build_plan, cgroup_level_for_slice, nft_ruleset, route_script, scope_command, RoutingError,
+    APP_SLICE, DIRECT_MARK, FWMARK, NFT_TABLE, ROUTE_TABLE,
+    build_plan, cgroup_level_for_component, cgroup_level_for_slice,
+    nft_ruleset, route_script, scope_command, user_manager_component,
+    RoutingError,
 )
 
 
 class AppRoutingPlannerTests(unittest.TestCase):
-    def test_cgroup_level_tracks_systemd_user_hierarchy(self):
-        path = "/user.slice/user-1000.slice/user@1000.service/app.slice"
-        self.assertEqual(cgroup_level_for_slice(path), 4)
+    PATH = "/user.slice/user-1000.slice/user@1000.service/app.slice"
 
-    def test_cgroup_level_does_not_duplicate_slice(self):
-        path = "/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-apps.slice"
+    def test_user_manager_and_future_app_slice_levels(self):
+        self.assertEqual(cgroup_level_for_component(self.PATH, "user@1000.service"), 3)
+        self.assertEqual(cgroup_level_for_slice(self.PATH), 4)
+
+    def test_existing_app_slice_level_is_detected(self):
+        path = self.PATH + "/adguard-vpn-apps.slice/adguard-vpn-app-test.scope"
         self.assertEqual(cgroup_level_for_slice(path), 5)
 
     def test_cgroup_level_requires_user_manager_hierarchy(self):
         with self.assertRaises(RoutingError):
             cgroup_level_for_slice("/system.slice/example.service")
 
-    def test_nft_rules_are_confined_to_owned_table(self):
-        rules = nft_ruleset(5)
+    def test_selected_only_policy_marks_only_managed_app_slice(self):
+        rules = nft_ruleset("selected", 4, 3)
         self.assertIn(f"table inet {NFT_TABLE}", rules)
-        self.assertIn('socket cgroupv2 level 5 "adguard-vpn-apps.slice"', rules)
-        self.assertIn(f"meta mark set {FWMARK}", rules)
+        self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" meta mark set {FWMARK}', rules)
+        self.assertNotIn(user_manager_component(), rules)
         self.assertNotIn("flush ruleset", rules)
 
-    def test_route_script_uses_dedicated_table_and_both_families(self):
-        script = route_script()
-        self.assertIn(f"table {ROUTE_TABLE}", script)
-        self.assertIn("ip -6 route replace", script)
+    def test_all_except_policy_marks_user_session_then_overrides_app_slice(self):
+        rules = nft_ruleset("all_except_selected", 4, 3)
+        self.assertIn('socket cgroupv2 level 3 "user@1000.service" meta mark set 0xAD61', rules)
+        self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" meta mark set {DIRECT_MARK}', rules)
+
+    def test_route_script_isolated_and_has_explicit_cleanup(self):
+        script = route_script("selected", 4, 3)
+        self.assertIn(f'table "{ROUTE_TABLE}"', script)
+        self.assertIn("ip -6 route replace default", script)
         self.assertIn("nft -f -", script)
-        self.assertIn("socket cgroupv2 level 5", script)
+        self.assertIn("--cleanup", script)
         self.assertIn(f"fwmark {FWMARK}", script)
-        self.assertNotIn("ip route flush", script)
+        self.assertNotIn("ip route flush main", script)
+        self.assertNotIn("flush ruleset", script)
 
-    def test_build_plan_is_pure_and_validates_interface(self):
-        plan = build_plan("tun0", "/user.slice/user-1000.slice/user@1000.service/app.slice")
-        self.assertEqual(plan["interface"], "tun0")
-        self.assertEqual(plan["scope_slice"], APP_SLICE)
+    def test_all_except_route_script_has_direct_policy_rule(self):
+        script = route_script("all_except_selected", 4, 3)
+        self.assertIn(f"fwmark {DIRECT_MARK} lookup main", script)
+        self.assertIn('meta mark set 0xAD62', script)
+
+    def test_invalid_mode_rejected(self):
         with self.assertRaises(ValueError):
-            build_plan("tun0;reboot", "/user.slice")
+            route_script("all", 4, 3)
 
-    def test_scope_command_uses_systemd_user_slice_and_keeps_arguments(self):
+    def test_scope_command_uses_user_slice_and_preserves_arguments(self):
         command = scope_command(["/usr/bin/example", "--url", "https://example.test"], "org.example.App")
         self.assertEqual(command[:3], ["systemd-run", "--user", "--scope"])
         self.assertIn(f"--slice={APP_SLICE}", command)
