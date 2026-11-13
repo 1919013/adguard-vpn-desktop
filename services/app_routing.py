@@ -132,6 +132,30 @@ fi
 case "$IFACE" in
   *[!A-Za-z0-9_.:-]*) echo "Invalid TUN interface argument" >&2; exit 2 ;;
 esac
+# Refuse to overwrite unrelated policy rules or routes using our reserved IDs.
+check_rule_slot() {
+  family="$1"
+  priority="$2"
+  expected="$3"
+  existing=$("$family" rule show | grep -E "^[[:space:]]*${priority}:" || true)
+  if [ -n "$existing" ] && ! printf '%s\\n' "$existing" | grep -Eiq "$expected"; then
+    echo "Policy rule priority conflict at ${priority}; refusing to modify it" >&2
+    exit 2
+  fi
+}
+check_route_table() {
+  family="$1"
+  routes=$("$family" route show table "$TABLE" 2>/dev/null || true)
+  unexpected=$(printf '%s\\n' "$routes" | grep -Ev '^$|^default dev [A-Za-z0-9_.:-]+([[:space:]]|$)' || true)
+  if [ -n "$unexpected" ]; then
+    echo "Route table $TABLE contains unrelated routes; refusing to modify it" >&2
+    exit 2
+  fi
+}
+check_rule_slot ip {VPN_RULE_PRIORITY} 'fwmark 0x(ad61|AD61).*lookup 51861'
+check_rule_slot ip -6 {VPN_RULE_PRIORITY} 'fwmark 0x(ad61|AD61).*lookup 51861'
+check_route_table ip
+check_route_table "ip -6"
 # Build the tunnel table first; do not change the main/default route.
 ip route replace default dev "$IFACE" table "$TABLE" || {{ cleanup; exit 1; }}
 ip -6 route replace default dev "$IFACE" table "$TABLE" || {{ cleanup; exit 1; }}
