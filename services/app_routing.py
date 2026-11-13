@@ -19,6 +19,7 @@ NFT_TABLE = "adguard_vpn_desktop"
 NFT_CHAIN = "app_output"
 APP_SLICE = "adguard-vpn-apps.slice"
 VPN_MARK = "0xAD61"
+FWMARK = VPN_MARK  # compatibility alias
 DIRECT_MARK = "0xAD62"
 ROUTE_TABLE = "51861"
 VPN_RULE_PRIORITY = "10610"
