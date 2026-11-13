@@ -15,7 +15,7 @@ class ApplicationDiscoveryTests(unittest.TestCase):
 
     def test_resolve_absolute_executable(self):
         command, reason = _resolve([sys.executable, "-V"])
-        self.assertIsNone(reason)
+        self.assertEqual(reason, "")
         self.assertEqual(command, [str(Path(sys.executable).resolve()), "-V"])
 
     def test_flatpak_is_marked_unsupported(self):
