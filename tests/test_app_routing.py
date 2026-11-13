@@ -2,7 +2,7 @@
 import unittest
 from services.app_routing import (
     APP_SLICE, FWMARK, NFT_TABLE, ROUTE_TABLE,
-    build_plan, cgroup_level_for_slice, nft_ruleset, route_script, scope_command,
+    build_plan, cgroup_level_for_slice, nft_ruleset, route_script, scope_command, RoutingError,
 )
 
 
@@ -16,7 +16,7 @@ class AppRoutingPlannerTests(unittest.TestCase):
         self.assertEqual(cgroup_level_for_slice(path), 5)
 
     def test_cgroup_level_requires_user_manager_hierarchy(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(RoutingError):
             cgroup_level_for_slice("/system.slice/example.service")
 
     def test_nft_rules_are_confined_to_owned_table(self):
