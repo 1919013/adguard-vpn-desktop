@@ -32,4 +32,19 @@ class VPNService:
         return self.runner(["connect"], timeout=90)
 
     def disconnect(self) -> tuple[int, str]:
-        return self.runner(["disconnect"], timeout=45)
+        code, output = self.runner(["disconnect"], timeout=45)
+        if code == 0:
+            # Remove only ADGuard VPN Desktop's private policy-routing objects.
+            # The saved route hook remains installed for the next connection.
+            try:
+                from services.app_routing import state_path, cleanup_kernel_state
+                if state_path().is_file():
+                    cleanup_code, cleanup_output = cleanup_kernel_state()
+                    if cleanup_code:
+                        return cleanup_code, (
+                            (output + "\\n") if output else ""
+                        ) + "VPN отключён, но не удалось очистить правила раздельного туннелирования: " + cleanup_output
+                    output = (output + "\\n" if output else "") + cleanup_output
+            except Exception as exc:
+                return 1, (output + "\\n" if output else "") + f"VPN отключён, ошибка очистки маршрутов: {exc}"
+        return code, output
