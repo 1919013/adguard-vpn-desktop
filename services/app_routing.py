@@ -77,7 +77,11 @@ def nft_ruleset(mode: str, app_level: int, manager_level: int | None = None) -> 
     if not 1 <= manager_level < app_level <= 32:
         raise ValueError("Некорректная иерархия cgroup.")
     manager = user_manager_component()
-    rules = []
+    # systemd-resolved is a separate system service; keep its DNS requests
+    # inside the VPN in either mode when that resolver is active.
+    rules = [
+        f'    socket cgroupv2 level 2 "systemd-resolved.service" meta mark set {VPN_MARK}'
+    ]
     if mode == "selected":
         rules.append(
             f'    socket cgroupv2 level {app_level} "{APP_SLICE}" meta mark set {VPN_MARK}'
@@ -129,25 +133,29 @@ case "$IFACE" in
   *[!A-Za-z0-9_.:-]*) echo "Invalid TUN interface argument" >&2; exit 2 ;;
 esac
 # Build the tunnel table first; do not change the main/default route.
-ip route replace default dev "$IFACE" table "$TABLE"
-ip -6 route replace default dev "$IFACE" table "$TABLE"
+ip route replace default dev "$IFACE" table "$TABLE" || {{ cleanup; exit 1; }}
+ip -6 route replace default dev "$IFACE" table "$TABLE" || {{ cleanup; exit 1; }}
 ip rule del priority {VPN_RULE_PRIORITY} fwmark {VPN_MARK} lookup "$TABLE" 2>/dev/null || true
-ip rule add priority {VPN_RULE_PRIORITY} fwmark {VPN_MARK} lookup "$TABLE"
+ip rule add priority {VPN_RULE_PRIORITY} fwmark {VPN_MARK} lookup "$TABLE" || {{ cleanup; exit 1; }}
 ip -6 rule del priority {VPN_RULE_PRIORITY} fwmark {VPN_MARK} lookup "$TABLE" 2>/dev/null || true
-ip -6 rule add priority {VPN_RULE_PRIORITY} fwmark {VPN_MARK} lookup "$TABLE"
+ip -6 rule add priority {VPN_RULE_PRIORITY} fwmark {VPN_MARK} lookup "$TABLE" || {{ cleanup; exit 1; }}
 if [ "{mode}" = "all_except_selected" ]; then
   ip rule del priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main 2>/dev/null || true
-  ip rule add priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main
+  ip rule add priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main || {{ cleanup; exit 1; }}
   ip -6 rule del priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main 2>/dev/null || true
-  ip -6 rule add priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main
+  ip -6 rule add priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main || {{ cleanup; exit 1; }}
 else
   ip rule del priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main 2>/dev/null || true
   ip -6 rule del priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main 2>/dev/null || true
 fi
 nft delete table inet "$NFT_TABLE" 2>/dev/null || true
-nft -f - <<'NFT_EOF'
+if ! nft -f - <<'NFT_EOF'
 {rules.rstrip()}
 NFT_EOF
+then
+  cleanup
+  exit 1
+fi
 '''
 
 
