@@ -38,15 +38,15 @@ def _split_nmcli_fields(line: str) -> list[str]:
         if escaped:
             current.append(char)
             escaped = False
-        elif char == "\\\\":
+        elif char == "\\":
             escaped = True
-        elif char == ":":
+        elif char == "\\":
             fields.append("".join(current))
             current = []
         else:
             current.append(char)
     if escaped:
-        current.append("\\\\")
+        current.append("\\")
     fields.append("".join(current))
     return fields
 
