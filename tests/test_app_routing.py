@@ -9,11 +9,15 @@ from services.app_routing import (
 class AppRoutingPlannerTests(unittest.TestCase):
     def test_cgroup_level_tracks_systemd_user_hierarchy(self):
         path = "/user.slice/user-1000.slice/user@1000.service/app.slice"
-        self.assertEqual(cgroup_level_for_slice(path), 5)
+        self.assertEqual(cgroup_level_for_slice(path), 4)
 
     def test_cgroup_level_does_not_duplicate_slice(self):
         path = "/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-apps.slice"
         self.assertEqual(cgroup_level_for_slice(path), 5)
+
+    def test_cgroup_level_requires_user_manager_hierarchy(self):
+        with self.assertRaises(Exception):
+            cgroup_level_for_slice("/system.slice/example.service")
 
     def test_nft_rules_are_confined_to_owned_table(self):
         rules = nft_ruleset(5)
