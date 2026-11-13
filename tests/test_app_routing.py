@@ -30,6 +30,7 @@ class AppRoutingPlannerTests(unittest.TestCase):
         rules = nft_ruleset("selected", 4, 3)
         self.assertIn(f"table inet {NFT_TABLE}", rules)
         self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" meta mark set {FWMARK}', rules)
+        self.assertIn('socket cgroupv2 level 2 "systemd-resolved.service" meta mark set 0xAD61', rules)
         self.assertNotIn(user_manager_component(), rules)
         self.assertNotIn("flush ruleset", rules)
 
