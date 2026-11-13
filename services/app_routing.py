@@ -221,6 +221,14 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
         state.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if hook.is_symlink():
             return 2, "Файл route script является символической ссылкой; настройка отменена."
+        if not hook.exists():
+            code, output = _run(["adguardvpn-cli", "config", "create-route-script"])
+            if code or not hook.is_file():
+                return code or 2, output or (
+                    "AdGuard VPN CLI не создал ожидаемый route script: " + str(hook)
+                )
+        if hook.is_symlink():
+            return 2, "Файл route script является символической ссылкой; настройка отменена."
         previous_script = hook.read_text(encoding="utf-8") if hook.exists() else None
         payload = {
             "version": 1, "mode": mode, "hook": str(hook),
