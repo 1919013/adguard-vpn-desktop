@@ -79,18 +79,23 @@ def nft_ruleset(mode: str, app_level: int, manager_level: int | None = None) -> 
     manager = user_manager_component()
     # systemd-resolved is a separate system service; keep its DNS requests
     # inside the VPN in either mode when that resolver is active.
+    public_v4 = "ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 224.0.0.0/4 }"
+    public_v6 = "ip6 daddr != { fc00::/7, fe80::/10, ff00::/8 }"
     rules = [
-        f'    socket cgroupv2 level 2 "systemd-resolved.service" meta mark set {VPN_MARK}'
+        f'    socket cgroupv2 level 2 "systemd-resolved.service" {public_v4} meta mark set {VPN_MARK}',
+        f'    socket cgroupv2 level 2 "systemd-resolved.service" {public_v6} meta mark set {VPN_MARK}',
     ]
     if mode == "selected":
-        rules.append(
-            f'    socket cgroupv2 level {app_level} "{APP_SLICE}" meta mark set {VPN_MARK}'
-        )
+        rules.extend([
+            f'    socket cgroupv2 level {app_level} "{APP_SLICE}" {public_v4} meta mark set {VPN_MARK}',
+            f'    socket cgroupv2 level {app_level} "{APP_SLICE}" {public_v6} meta mark set {VPN_MARK}',
+        ])
     else:
         # Mark all processes in this user's systemd session for VPN, then
         # override selected app scopes to use the physical/main routing table.
         rules.extend([
-            f'    socket cgroupv2 level {manager_level} "{manager}" meta mark set {VPN_MARK}',
+            f'    socket cgroupv2 level {manager_level} "{manager}" {public_v4} meta mark set {VPN_MARK}',
+            f'    socket cgroupv2 level {manager_level} "{manager}" {public_v6} meta mark set {VPN_MARK}',
             f'    socket cgroupv2 level {app_level} "{APP_SLICE}" meta mark set {DIRECT_MARK}',
         ])
     return (
