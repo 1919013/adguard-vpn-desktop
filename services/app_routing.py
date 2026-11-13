@@ -35,7 +35,7 @@ def cgroup_level_for_slice(cgroup_path: str, slice_name: str = APP_SLICE) -> int
     # below the current GUI application's app.slice/scope.
     manager_index = next(
         (index for index, part in enumerate(parts)
-         if re.fullmatch(r"user@\\d+\\.service", part)),
+         if re.fullmatch(r"user@\d+\.service", part)),
         None,
     )
     if manager_index is None:
