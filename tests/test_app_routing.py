@@ -1,9 +1,10 @@
 """Headless tests for per-application TUN routing policy generation."""
 import unittest
+import subprocess
 
 from services.app_routing import (
     APP_SLICE, DIRECT_MARK, FWMARK, NFT_TABLE, ROUTE_TABLE,
-    build_plan, cgroup_level_for_component, cgroup_level_for_slice,
+    cgroup_level_for_component, cgroup_level_for_slice,
     nft_ruleset, route_script, scope_command, user_manager_component,
     RoutingError,
 )
@@ -45,6 +46,14 @@ class AppRoutingPlannerTests(unittest.TestCase):
         self.assertIn(f"fwmark {FWMARK}", script)
         self.assertNotIn("ip route flush main", script)
         self.assertNotIn("flush ruleset", script)
+
+    def test_generated_route_script_passes_posix_shell_syntax_check(self):
+        for mode in ("selected", "all_except_selected"):
+            result = subprocess.run(
+                ["sh", "-n"], input=route_script(mode, 4, 3),
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_all_except_route_script_has_direct_policy_rule(self):
         script = route_script("all_except_selected", 4, 3)
