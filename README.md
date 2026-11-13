@@ -1,6 +1,6 @@
 # ADGuard VPN Desktop
 
-An independent open-source desktop GUI for **AdGuard VPN CLI** on Linux. This project is not developed, endorsed, or supported by AdGuard.
+An independent desktop GUI for **AdGuard VPN CLI** on Linux. This project is not developed, endorsed, or supported by AdGuard.
 
 > Development status: feature branch under review. Runtime validation on target desktop systems and release packaging are still pending.
 
@@ -57,6 +57,20 @@ GitHub Actions runs these checks on pushes and pull requests. Passing CI does no
 - `ui/` — GTK interface.
 - `i18n/` — planned translations.
 - `tests/` — headless regression tests.
+
+## Updating the current Git checkout
+
+For a clean clone with its upstream branch configured:
+
+```sh
+git pull --ff-only
+```
+
+For the default user installation created by the GUI, the command is:
+
+```sh
+cd ~/.local/share/adguard-vpn-desktop/app && git pull --ff-only
+```
 
 ## License
 
