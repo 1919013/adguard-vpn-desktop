@@ -195,7 +195,7 @@ def _require_disconnected() -> tuple[int, str]:
     if code:
         return code, status or "Не удалось проверить состояние VPN."
     normalized = status.casefold()
-    if re.search(r"\\bconnected\\b", normalized) and not re.search(r"\\b(disconnected|not connected)\\b", normalized):
+    if "connected" in normalized and not any(term in normalized for term in ("disconnected", "not connected")):
         return 2, "Перед изменением маршрутизации отключите VPN. После настройки подключите его снова."
     return 0, ""
 
