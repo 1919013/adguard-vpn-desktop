@@ -190,6 +190,16 @@ def _config_value(output: str, names: Sequence[str]) -> str | None:
     return None
 
 
+def _require_disconnected() -> tuple[int, str]:
+    code, status = _run(["adguardvpn-cli", "status"])
+    if code:
+        return code, status or "Не удалось проверить состояние VPN."
+    normalized = status.casefold()
+    if "connected" in normalized and "disconnected" not in normalized:
+        return 2, "Перед изменением маршрутизации отключите VPN. После настройки подключите его снова."
+    return 0, ""
+
+
 def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
     """Install a reversible route hook and configure the CLI for TUN/SCRIPT."""
     if mode not in VALID_MODES:
@@ -207,6 +217,9 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
     except (RoutingError, ValueError) as exc:
         return 2, str(exc)
 
+    code, status_message = _require_disconnected()
+    if code:
+        return code, status_message
     state = state_path()
     hook = route_script_path()
     if state.exists():
@@ -278,6 +291,9 @@ def reconfigure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
     state = state_path()
     if not state.is_file() or state.is_symlink():
         return configure(mode, cgroup_path)
+    code, status_message = _require_disconnected()
+    if code:
+        return code, status_message
     try:
         path = cgroup_path if cgroup_path is not None else current_user_cgroup_path()
         manager_level = cgroup_level_for_component(path, user_manager_component())
