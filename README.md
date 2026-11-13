@@ -7,34 +7,35 @@ An independent desktop GUI for **AdGuard VPN CLI** on Linux. This project is not
 ## Current feature set
 
 - VPN CLI connection controls and server/location selection.
-- AdGuard VPN CLI information and management: detect installation, official install/update workflow, status, connect/disconnect, cache and user-data cleanup, and separate CLI/GUI autostart controls.
-- Dynamic network-interface discovery and the AdGuard VPN CLI outbound-interface override. The interface list is detected at runtime; personal NetworkManager profile names are not hard-coded. The CLI currently supports one selected outbound interface.
-- Application launchers through AdGuard VPN CLI SOCKS5 mode and `proxychains4`. The feature creates separate launchers and does not replace original desktop entries or system routes.
+- AdGuard VPN CLI management: installation detection, official install/update workflow, status, connect/disconnect, cache and user-data cleanup, and separate CLI/GUI autostart controls.
+- Dynamic network-interface discovery and the AdGuard VPN CLI outbound-interface override. Personal NetworkManager profile names are not hard-coded.
+- A website-exclusions tab using the CLI's native General and Selective lists.
+- Separate application launchers using SOCKS5 and `proxychains4` (a limited compatibility mechanism).
+- An experimental planner for selected-app TUN routing based on cgroup v2, systemd, and nftables. It is not yet connected to the Apply UI and does not change network settings.
 - Browser-based help with an explicit unofficial-project disclaimer.
 - A DNS tab in a deliberately restricted test-only mode.
 
-## Important limitations
+## Split tunneling
 
-### Per-application routing
+### Websites
 
-Linux AdGuard VPN CLI does not expose a native per-process TUN selector. The current application-routing feature is a SOCKS5 + `proxychains4` launcher, not native per-process TUN routing. It requires SOCKS mode and a working local SOCKS listener. Proxy interception is not guaranteed for every application or protocol; UDP/QUIC behavior depends on application support. Flatpak and Snap launchers are marked unsupported.
+The website-exclusions tab controls the native CLI feature:
+- **General** — listed websites bypass the VPN.
+- **Selective** — only listed websites use the VPN.
 
-On Debian, install the dependency with:
+The two website lists are independent from app selection. See the [official Linux settings documentation](https://adguard-vpn.com/kb/en/adguard-vpn-for-linux/settings/).
 
-```sh
-sudo apt install proxychains4
-adguardvpn-cli config set-mode SOCKS
-```
+### Applications
 
-Reconnect the VPN after changing its mode. The generated launchers are separate entries labelled “via AdGuard VPN”.
+Current SOCKS5/proxy launchers are not full per-process split tunneling; interception is not guaranteed for every app or protocol. An experimental TUN-routing foundation has been added using a dedicated systemd cgroup, nftables socket-cgroup matching, and a separate routing table. At this stage, only the planner and headless tests exist; UI integration, connection/disconnection lifecycle handling, and the “all apps except selected” mode remain unfinished. Do not manually apply experimental rules to a production network before dedicated validation.
 
-### DNS
+## DNS
 
-The current DNS manager is a safety test harness restricted to two explicitly allowlisted test profile names. It refuses active test profiles and refuses writes unless AdGuard VPN TUN status is confirmed. It does not modify ordinary user NetworkManager profiles. This is not production DNS management and not a DNS leak test.
+The current DNS manager is a safety test harness restricted to two explicitly allowlisted test profiles. It refuses active test profiles and refuses writes unless AdGuard VPN TUN status is confirmed. It does not modify ordinary user NetworkManager profiles. This is not production DNS management or a DNS leak test.
 
-### Network interfaces
+## Network interfaces
 
-The interface tab discovers current non-loopback, non-tunnel devices at runtime and applies the documented `adguardvpn-cli config set-bound-if-override` setting. It does not edit NetworkManager connection profiles. The CLI setting accepts one interface; clearing the selection restores automatic interface choice.
+The interface tab discovers current non-loopback, non-tunnel devices and applies the documented `adguardvpn-cli config set-bound-if-override` setting. It does not edit NetworkManager connection profiles. The CLI setting accepts one interface; clearing the selection restores automatic interface choice.
 
 ## Development and checks
 
@@ -66,7 +67,7 @@ For a clean clone with its upstream branch configured:
 git pull --ff-only
 ```
 
-For the default user installation created by the GUI, the command is:
+For the default user installation created by the GUI:
 
 ```sh
 cd ~/.local/share/adguard-vpn-desktop/app && git pull --ff-only
