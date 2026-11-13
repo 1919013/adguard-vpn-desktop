@@ -139,7 +139,7 @@ check_rule_slot() {
   expected="$3"
   shift 3
   existing=$("$family" "$@" rule show | grep -E "^[[:space:]]*${priority}:" || true)
-  if [ -n "$existing" ] && ! printf '%s\\n' "$existing" | grep -Eiq "$expected"; then
+  if [ -n "$existing" ] && ! printf '%s\n' "$existing" | grep -Eiq "$expected"; then
     echo "Policy rule priority conflict at ${priority}; refusing to modify it" >&2
     exit 2
   fi
@@ -148,7 +148,7 @@ check_route_table() {
   family="$1"
   shift
   routes=$("$family" "$@" route show table "$TABLE" 2>/dev/null || true)
-  unexpected=$(printf '%s\\n' "$routes" | grep -Ev '^$|^default dev [A-Za-z0-9_.:-]+([[:space:]]|$)' || true)
+  unexpected=$(printf '%s\n' "$routes" | grep -Ev '^$|^default dev [A-Za-z0-9_.:-]+([[:space:]]|$)' || true)
   if [ -n "$unexpected" ]; then
     echo "Route table $TABLE contains unrelated routes; refusing to modify it" >&2
     exit 2
