@@ -1,4 +1,4 @@
-"""Native AdGuard VPN CLI website exclusions (independent from app routing)."""
+"""Native AdGuard VPN CLI website exclusions (separate from app routing)."""
 from __future__ import annotations
 
 import re
@@ -7,7 +7,7 @@ import subprocess
 from typing import Iterable
 
 VALID_MODES = {"general", "selective"}
-DOMAIN_RE = re.compile(r"^(?:\*\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$")
+DOMAIN_RE = re.compile(r"^(?:\\*\\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$")
 
 
 class SiteExclusionError(RuntimeError):
@@ -17,7 +17,7 @@ class SiteExclusionError(RuntimeError):
 def validate_domains(value: str | Iterable[str]) -> list[str]:
     """Validate domains and wildcard domains accepted by the CLI."""
     raw = value.split() if isinstance(value, str) else list(value)
-    domains = []
+    domains: list[str] = []
     for item in raw:
         domain = str(item).strip().rstrip(".")
         if not domain or not DOMAIN_RE.fullmatch(domain):
@@ -45,6 +45,7 @@ def run_cli(*args: str) -> tuple[int, str]:
 
 
 def get_mode() -> tuple[int, str]:
+    """Read the active site-exclusion mode without changing it."""
     return run_cli("mode")
 
 
@@ -58,36 +59,21 @@ def show_exclusions() -> tuple[int, str]:
     return run_cli("show")
 
 
-def add_exclusions(domains: str | Iterable[str], mode: str) -> tuple[int, str]:
-    if mode not in VALID_MODES:
-        raise ValueError("Неизвестный режим исключений.")
+def add_exclusions(domains: str | Iterable[str]) -> tuple[int, str]:
     values = validate_domains(domains)
     if not values:
         return 0, "Список доменов пуст."
-    code, output = set_mode(mode)
-    if code:
-        return code, output
     return run_cli("add", *values)
 
 
-def remove_exclusions(domains: str | Iterable[str], mode: str) -> tuple[int, str]:
-    if mode not in VALID_MODES:
-        raise ValueError("Неизвестный режим исключений.")
+def remove_exclusions(domains: str | Iterable[str]) -> tuple[int, str]:
     values = validate_domains(domains)
     if not values:
         return 0, "Список доменов пуст."
-    code, output = set_mode(mode)
-    if code:
-        return code, output
     return run_cli("remove", *values)
 
 
-def clear_exclusions(mode: str) -> tuple[int, str]:
-    if mode not in VALID_MODES:
-        raise ValueError("Неизвестный режим исключений.")
-    code, output = set_mode(mode)
-    if code:
-        return code, output
+def clear_exclusions() -> tuple[int, str]:
     return run_cli("clear")
 
 
@@ -100,28 +86,31 @@ def build_site_exclusions_tab():
     root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     root.set_border_width(12)
     intro = Gtk.Label(
-        label="Списки сайтов управляются штатной командой AdGuard VPN CLI. "
-              "Режимы сайтов независимы от выбора приложений: General — указанные сайты идут напрямую; "
-              "Selective — через VPN идут только указанные сайты.",
+        label=("AdGuard VPN CLI использует один список сайтов и отдельный активный режим. "
+               "General — сайты из списка идут напрямую, мимо VPN. "
+               "Selective — через VPN идут только сайты из списка. "
+               "Смена режима влияет на VPN сразу после применения."),
         xalign=0,
     )
     intro.set_line_wrap(True)
     root.pack_start(intro, False, False, 0)
 
     mode_row = Gtk.Box(spacing=8)
-    mode_row.pack_start(Gtk.Label(label="Режим списка:"), False, False, 0)
+    mode_row.pack_start(Gtk.Label(label="Режим:"), False, False, 0)
     mode = Gtk.ComboBoxText()
-    mode.append("general", "General — исключить из VPN")
-    mode.append("selective", "Selective — только через VPN")
+    mode.append("general", "General — исключить сайты из VPN")
+    mode.append("selective", "Selective — VPN только для сайтов списка")
     mode.set_active_id("general")
     mode_row.pack_start(mode, True, True, 0)
+    apply_mode = Gtk.Button(label="Применить режим")
+    mode_row.pack_start(apply_mode, False, False, 0)
     root.pack_start(mode_row, False, False, 0)
 
     domains = Gtk.Entry()
     domains.set_placeholder_text("example.org *.example.net — домены через пробел")
     root.pack_start(domains, False, False, 0)
 
-    status = Gtk.Label(label="Списки сайтов хранятся в настройках AdGuard VPN CLI.", xalign=0)
+    status = Gtk.Label(label="Чтение текущих настроек AdGuard VPN CLI…", xalign=0)
     status.set_line_wrap(True)
     root.pack_start(status, False, False, 0)
 
@@ -137,32 +126,24 @@ def build_site_exclusions_tab():
 
     buttons = Gtk.Box(spacing=6)
     root.pack_start(buttons, False, False, 0)
-    actions = [
-        ("Показать список", "show"),
-        ("Добавить", "add"),
-        ("Удалить выбранные домены", "remove"),
-        ("Очистить список", "clear"),
-    ]
+    actions = [("Показать список", "show"), ("Добавить", "add"),
+               ("Удалить домены", "remove"), ("Очистить список", "clear")]
     widgets = {}
     for label, key in actions:
         button = Gtk.Button(label=label)
         buttons.pack_start(button, False, False, 0)
         widgets[key] = button
 
-    def selected_mode():
-        return mode.get_active_id() or "general"
-
-    def render(result):
-        code, text = result
-        status.set_text("Готово." if code == 0 else "Ошибка выполнения команды.")
-        output.get_buffer().set_text(text or ("Команда выполнена." if code == 0 else "Нет вывода CLI."))
-        for button in widgets.values():
+    def set_output(result, message=None):
+        code, output_text = result
+        status.set_text(message or ("Готово." if code == 0 else "Ошибка выполнения команды."))
+        output.get_buffer().set_text(output_text or ("Команда выполнена." if code == 0 else "Нет вывода CLI."))
+        for button in (*widgets.values(), apply_mode):
             button.set_sensitive(True)
         return False
 
-    def run_action(action):
+    def run_worker(action):
         value = domains.get_text().strip()
-        chosen_mode = selected_mode()
         if action in {"add", "remove"}:
             try:
                 validate_domains(value)
@@ -175,32 +156,70 @@ def build_site_exclusions_tab():
                 flags=Gtk.DialogFlags.MODAL, message_type=Gtk.MessageType.WARNING,
                 buttons=Gtk.ButtonsType.CANCEL, text="Очистить список сайтов?",
             )
-            dialog.format_secondary_text("Будет очищен только список выбранного режима AdGuard VPN CLI.")
+            dialog.format_secondary_text("Будут удалены все домены из единственного списка исключений AdGuard VPN CLI.")
             dialog.add_button("Очистить", Gtk.ResponseType.OK)
             answer = dialog.run()
             dialog.destroy()
             if answer != Gtk.ResponseType.OK:
                 return
-        for button in widgets.values():
+        for button in (*widgets.values(), apply_mode):
             button.set_sensitive(False)
         status.set_text("Выполняется команда AdGuard VPN CLI…")
+
         def worker():
             try:
                 if action == "show":
-                    result = set_mode(chosen_mode)
-                    if result[0] == 0:
-                        result = show_exclusions()
+                    result = show_exclusions()
                 elif action == "add":
-                    result = add_exclusions(value, chosen_mode)
+                    result = add_exclusions(value)
                 elif action == "remove":
-                    result = remove_exclusions(value, chosen_mode)
+                    result = remove_exclusions(value)
                 else:
-                    result = clear_exclusions(chosen_mode)
-                GLib.idle_add(render, result)
+                    result = clear_exclusions()
+                GLib.idle_add(set_output, result)
             except Exception as exc:
-                GLib.idle_add(render, (1, str(exc)))
+                GLib.idle_add(set_output, (1, str(exc)))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def apply_selected_mode(*_):
+        chosen = mode.get_active_id()
+        if chosen not in VALID_MODES:
+            status.set_text("Выберите допустимый режим.")
+            return
+        for button in (*widgets.values(), apply_mode):
+            button.set_sensitive(False)
+        status.set_text("Изменение активного режима VPN…")
+        def worker():
+            try:
+                result = set_mode(chosen)
+                GLib.idle_add(set_output, result, "Активный режим изменён." if result[0] == 0 else None)
+            except Exception as exc:
+                GLib.idle_add(set_output, (1, str(exc)))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def load_current_mode():
+        def worker():
+            result = get_mode()
+            def apply_result():
+                code, text = result
+                if code == 0:
+                    normalized = text.casefold()
+                    current = "selective" if "selective" in normalized else "general" if "general" in normalized else None
+                    if current:
+                        mode.set_active_id(current)
+                        status.set_text("Текущий режим: " + current + ". Список сайтов можно просмотреть отдельно.")
+                    else:
+                        status.set_text("Не удалось распознать текущий режим. Проверьте вывод CLI.")
+                    output.get_buffer().set_text(text)
+                else:
+                    status.set_text("Не удалось прочитать режим AdGuard VPN CLI.")
+                    output.get_buffer().set_text(text)
+                return False
+            GLib.idle_add(apply_result)
         threading.Thread(target=worker, daemon=True).start()
 
     for key, button in widgets.items():
-        button.connect("clicked", lambda _button, action=key: run_action(action))
+        button.connect("clicked", lambda _button, action=key: run_worker(action))
+    apply_mode.connect("clicked", apply_selected_mode)
+    load_current_mode()
     return root
