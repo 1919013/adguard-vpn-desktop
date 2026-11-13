@@ -26,6 +26,8 @@ class AppRoutingPlannerTests(unittest.TestCase):
         script = route_script()
         self.assertIn(f"table {ROUTE_TABLE}", script)
         self.assertIn("ip -6 route replace", script)
+        self.assertIn("nft -f -", script)
+        self.assertIn("socket cgroupv2 level 5", script)
         self.assertIn(f"fwmark {FWMARK}", script)
         self.assertNotIn("ip route flush", script)
 
