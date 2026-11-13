@@ -10,7 +10,6 @@ import hashlib
 import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -60,7 +59,7 @@ def nft_ruleset(cgroup_level: int) -> str:
     )
 
 
-def route_script() -> str:
+def route_script(cgroup_level: int = 5) -> str:
     """Generate AdGuard VPN CLI SCRIPT-mode hook for selected-app traffic.
 
     The hook receives the active TUN interface as $1.  Routes are isolated in
@@ -80,6 +79,15 @@ ip rule del priority {RULE_PRIORITY} fwmark {FWMARK} lookup {ROUTE_TABLE} 2>/dev
 ip rule add priority {RULE_PRIORITY} fwmark {FWMARK} lookup {ROUTE_TABLE}
 ip -6 rule del priority {RULE_PRIORITY} fwmark {FWMARK} lookup {ROUTE_TABLE} 2>/dev/null || true
 ip -6 rule add priority {RULE_PRIORITY} fwmark {FWMARK} lookup {ROUTE_TABLE}
+nft delete table inet {NFT_TABLE} 2>/dev/null || true
+nft -f - <<'NFT_EOF'
+table inet {NFT_TABLE} {{
+  chain {NFT_CHAIN} {{
+    type route hook output priority mangle; policy accept;
+    socket cgroupv2 level {cgroup_level} "{APP_SLICE}" meta mark set {FWMARK}
+  }}
+}}
+NFT_EOF
 '''
 
 
@@ -107,7 +115,7 @@ def build_plan(interface: str, cgroup_path: str | None = None) -> dict:
         "cgroup_level": level,
         "nft_table": NFT_TABLE,
         "nft_rules": nft_ruleset(level),
-        "route_script": route_script(),
+        "route_script": route_script(level),
         "route_table": ROUTE_TABLE,
         "fwmark": FWMARK,
         "scope_slice": APP_SLICE,
@@ -132,9 +140,3 @@ def check_capabilities() -> tuple[bool, list[str]]:
     return not problems, problems
 
 
-def launch_in_routing_scope(command: Sequence[str], app_id: str) -> subprocess.Popen:
-    """Launch an application in the dedicated cgroup slice."""
-    ready, problems = check_capabilities()
-    if not ready:
-        raise RoutingError("; ".join(problems))
-    return subprocess.Popen(scope_command(command, app_id), close_fds=True)
