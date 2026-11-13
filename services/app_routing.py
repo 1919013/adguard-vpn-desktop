@@ -271,6 +271,32 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
     )
 
 
+def reconfigure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
+    """Change the active policy while retaining the original rollback snapshot."""
+    if mode not in VALID_MODES:
+        return 2, "Неизвестный режим раздельного туннелирования."
+    state = state_path()
+    if not state.is_file() or state.is_symlink():
+        return configure(mode, cgroup_path)
+    try:
+        path = cgroup_path if cgroup_path is not None else current_user_cgroup_path()
+        manager_level = cgroup_level_for_component(path, user_manager_component())
+        app_level = cgroup_level_for_slice(path)
+        script = route_script(mode, app_level, manager_level)
+        payload = json.loads(state.read_text(encoding="utf-8"))
+        hook = Path(payload["hook"])
+        if hook != route_script_path() or hook.is_symlink():
+            raise RoutingError("Путь route script не совпадает с сохранённым безопасным путём.")
+        hook.write_text(script, encoding="utf-8")
+        os.chmod(hook, 0o700)
+        payload["mode"] = mode
+        state.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.chmod(state, 0o600)
+        return 0, "Режим изменён. Переподключите VPN для применения новой политики."
+    except (OSError, ValueError, KeyError, TypeError, RoutingError) as exc:
+        return 1, f"Не удалось изменить режим: {exc}"
+
+
 def cleanup_kernel_state() -> tuple[int, str]:
     """Remove only the dedicated nftables table, rules and route table."""
     hook = route_script_path()
