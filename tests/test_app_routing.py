@@ -30,7 +30,8 @@ class AppRoutingPlannerTests(unittest.TestCase):
         rules = nft_ruleset("selected", 4, 3)
         self.assertIn(f"table inet {NFT_TABLE}", rules)
         self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" meta mark set {FWMARK}', rules)
-        self.assertIn('socket cgroupv2 level 2 "systemd-resolved.service" meta mark set 0xAD61', rules)
+        self.assertIn('socket cgroupv2 level 2 "systemd-resolved.service" ip daddr != { 10.0.0.0/8', rules)
+        self.assertIn("ip6 daddr != { fc00::/7, fe80::/10, ff00::/8 }", rules)
         self.assertNotIn(user_manager_component(), rules)
         self.assertNotIn("flush ruleset", rules)
 
@@ -38,6 +39,7 @@ class AppRoutingPlannerTests(unittest.TestCase):
         rules = nft_ruleset("all_except_selected", 4, 3)
         self.assertIn(f'socket cgroupv2 level 3 "{user_manager_component()}" meta mark set 0xAD61', rules)
         self.assertIn(f'socket cgroupv2 level 4 "{APP_SLICE}" meta mark set {DIRECT_MARK}', rules)
+        self.assertIn("192.168.0.0/16", rules)
 
     def test_route_script_isolated_and_has_explicit_cleanup(self):
         script = route_script("selected", 4, 3)
