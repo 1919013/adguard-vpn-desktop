@@ -195,7 +195,7 @@ def _require_disconnected() -> tuple[int, str]:
     if code:
         return code, status or "Не удалось проверить состояние VPN."
     normalized = status.casefold()
-    if "connected" in normalized and "disconnected" not in normalized:
+    if re.search(r"\\bconnected\\b", normalized) and not re.search(r"\\b(disconnected|not connected)\\b", normalized):
         return 2, "Перед изменением маршрутизации отключите VPN. После настройки подключите его снова."
     return 0, ""
 
@@ -227,8 +227,12 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
     code, config = _run(["adguardvpn-cli", "config", "show"])
     if code:
         return code, config or "Не удалось прочитать конфигурацию AdGuard VPN CLI."
-    old_vpn_mode = _config_value(config, ("Mode", "VPN mode")) or "UNKNOWN"
-    old_route_mode = _config_value(config, ("TUN routing mode", "Tunnel routing mode")) or "UNKNOWN"
+    old_vpn_mode = (_config_value(config, ("VPN mode", "Mode")) or "UNKNOWN").upper()
+    old_route_mode = (_config_value(config, ("TUN routing mode", "Tunnel routing mode")) or "UNKNOWN").upper()
+    if old_vpn_mode not in {"TUN", "SOCKS", "SOCKS5"}:
+        return 2, "Не удалось надёжно определить исходный режим VPN CLI; изменение отменено."
+    if old_route_mode not in {"AUTO", "SCRIPT", "NONE"}:
+        return 2, "Не удалось надёжно определить исходный режим маршрутизации; изменение отменено."
     try:
         hook.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         state.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
