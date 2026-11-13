@@ -23,7 +23,7 @@ The website-exclusions tab controls the native CLI feature:
 - **General** — listed websites bypass the VPN.
 - **Selective** — only listed websites use the VPN.
 
-The two website lists are independent from app selection. See the [official Linux settings documentation](https://adguard-vpn.com/kb/en/adguard-vpn-for-linux/settings/).
+There is one domain list and one active mode; changing the mode changes how that same list is applied. Editing the list does not silently switch modes. The website list is independent from app selection. See the [official Linux settings documentation](https://adguard-vpn.com/kb/en/adguard-vpn-for-linux/settings/).
 
 ### Applications
 
