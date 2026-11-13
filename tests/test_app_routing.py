@@ -40,8 +40,8 @@ class AppRoutingPlannerTests(unittest.TestCase):
         command = scope_command(["/usr/bin/example", "--url", "https://example.test"], "org.example.App")
         self.assertEqual(command[:3], ["systemd-run", "--user", "--scope"])
         self.assertIn(f"--slice={APP_SLICE}", command)
-        self.assertEqual(command[-3:], ["--url", "https://example.test"])
-        self.assertTrue(command[-4].endswith(".scope"))
+        self.assertEqual(command[-2:], ["--url", "https://example.test"])
+        self.assertTrue(command[4].endswith(".scope"))
 
 
 if __name__ == "__main__":
