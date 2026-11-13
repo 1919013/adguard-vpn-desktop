@@ -229,7 +229,7 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
         return code, config or "Не удалось прочитать конфигурацию AdGuard VPN CLI."
     old_vpn_mode = (_config_value(config, ("VPN mode", "Mode")) or "UNKNOWN").upper()
     old_route_mode = (_config_value(config, ("TUN routing mode", "Tunnel routing mode")) or "UNKNOWN").upper()
-    if old_vpn_mode not in {"TUN", "SOCKS", "SOCKS5"}:
+    if old_vpn_mode not in {"TUN", "SOCKS"}:
         return 2, "Не удалось надёжно определить исходный режим VPN CLI; изменение отменено."
     if old_route_mode not in {"AUTO", "SCRIPT", "NONE"}:
         return 2, "Не удалось надёжно определить исходный режим маршрутизации; изменение отменено."
@@ -330,6 +330,9 @@ def disable() -> tuple[int, str]:
     state = state_path()
     if not state.is_file() or state.is_symlink():
         return 2, "Нет сохранённой конфигурации для безопасного восстановления."
+    code, status_message = _require_disconnected()
+    if code:
+        return code, status_message
     try:
         payload = json.loads(state.read_text(encoding="utf-8"))
         hook = Path(payload["hook"])
