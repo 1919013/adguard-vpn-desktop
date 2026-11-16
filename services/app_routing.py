@@ -470,19 +470,3 @@ def disable() -> tuple[int, str]:
 def check_capabilities() -> tuple[bool, list[str]]:
     problems = _capability_problems()
     return not problems, problems
-
-    missing = [name for name in ("systemd-run", "nft", "ip", "adguardvpn-cli", "pkexec") if not shutil.which(name)]
-    problems = []
-    if missing:
-        problems.append("Не найдены команды: " + ", ".join(missing))
-    if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
-        problems.append("Требуется cgroup v2.")
-    try:
-        path = current_user_cgroup_path()
-        cgroup_level_for_component(path, user_manager_component())
-        cgroup_level_for_slice(path)
-    except RoutingError as exc:
-        problems.append(str(exc))
-    if not os.environ.get("XDG_RUNTIME_DIR"):
-        problems.append("Не задан XDG_RUNTIME_DIR; пользовательская systemd-сессия недоступна.")
-    return not problems, problems
