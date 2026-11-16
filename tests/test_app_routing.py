@@ -53,6 +53,8 @@ class AppRoutingPlannerTests(unittest.TestCase):
         self.assertIn("ip -6 route replace default", script)
         self.assertIn("nft -f -", script)
         self.assertIn("--cleanup", script)
+        self.assertIn("while [ -d \"/sys/class/net/$IFACE\" ]", script)
+        self.assertIn("manual CLI disconnects", script)
         self.assertIn(f"fwmark {FWMARK}", script)
         self.assertNotIn("ip route flush main", script)
         self.assertNotIn("flush ruleset", script)
