@@ -118,6 +118,17 @@ def get_bound_interface() -> tuple[int, str]:
     return _run(["adguardvpn-cli", "config", "show"])
 
 
+def get_active_vpn_interface() -> str | None:
+    """Read active TUN device reported by AdGuard VPN CLI."""
+    import re
+    code, output = _run(["adguardvpn-cli", "status"])
+    if code:
+        return None
+    clean = re.sub(r"\\x1b\\[[0-9;]*m", "", output)
+    match = re.search(r"(?:running\\s+on|interface\\s*[:=])\\s*([A-Za-z0-9_.:-]+)", clean, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
 def bind_interface(name: str | None) -> tuple[int, str]:
     """Bind VPN outbound traffic to one detected interface, or clear override."""
     if name is not None:
@@ -156,6 +167,11 @@ def build_interfaces_tab():
     note.set_line_wrap(True)
     root.pack_start(note, False, False, 0)
 
+    active_vpn = Gtk.Label(label="AdGuard VPN сейчас не подключён.", xalign=0)
+    active_vpn.set_line_wrap(True)
+    active_vpn.set_selectable(True)
+    root.pack_start(active_vpn, False, False, 0)
+
     status = Gtk.Label(label="Нажмите «Обновить список».", xalign=0)
     status.set_line_wrap(True)
     root.pack_start(status, False, False, 0)
@@ -182,8 +198,9 @@ def build_interfaces_tab():
                     other.set_active(False)
 
     def finish_discovery(result):
-        code, payload = result
+        code, payload, vpn_iface = result
         set_busy(False)
+        active_vpn.set_text(f"AdGuard VPN сейчас работает через интерфейс: {vpn_iface}" if vpn_iface else "AdGuard VPN сейчас не подключён (TUN-интерфейс не обнаружен).")
         for child in list_box.get_children():
             list_box.remove(child)
         selected.clear()
@@ -212,15 +229,17 @@ def build_interfaces_tab():
         status.set_text("Обнаружение интерфейсов…")
         def worker():
             try:
-                result = (0, discover_interfaces())
+                result = (0, discover_interfaces(), get_active_vpn_interface())
             except Exception as exc:
-                result = (1, str(exc))
+                result = (1, str(exc), None)
             GLib.idle_add(finish_discovery, result)
         threading.Thread(target=worker, daemon=True).start()
 
     def finish_apply(result, name):
         set_busy(False)
         code, output = result
+        vpn_iface = get_active_vpn_interface()
+        active_vpn.set_text(f"AdGuard VPN сейчас работает через интерфейс: {vpn_iface}" if vpn_iface else "AdGuard VPN сейчас не подключён (TUN-интерфейс не обнаружен).")
         status.set_text(
             ("Настройка применена: " + (name or "автоматический выбор интерфейса") + "\n" + output)
             if code == 0 else ("Не удалось применить настройку:\n" + output)
