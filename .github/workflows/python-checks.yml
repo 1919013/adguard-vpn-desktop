@@ -1,0 +1,20 @@
+name: Python checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "feature/**"]
+
+jobs:
+  compile-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile application modules
+        run: python -m compileall -q core modules services ui main.py
+      - name: Run headless tests
+        run: python -m unittest discover -s tests -v
