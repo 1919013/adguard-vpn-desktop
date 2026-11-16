@@ -10,8 +10,7 @@ An independent desktop GUI for **AdGuard VPN CLI** on Linux. This project is not
 - AdGuard VPN CLI management: installation detection, official install/update workflow, status, connect/disconnect, cache and user-data cleanup, and separate CLI/GUI autostart controls.
 - Dynamic network-interface discovery and the AdGuard VPN CLI outbound-interface override. Personal NetworkManager profile names are not hard-coded.
 - A website-exclusions tab using the CLI's native General and Selective lists.
-- Separate application launchers using SOCKS5 and `proxychains4` (a limited compatibility mechanism).
-- An experimental planner for selected-app TUN routing based on cgroup v2, systemd, and nftables. It is not yet connected to the Apply UI and does not change network settings.
+- Per-application TUN split tunneling with two modes, generated application launchers, systemd user scopes, cgroup v2, nftables socket matching, and dedicated IPv4/IPv6 policy routing.
 - Browser-based help with an explicit unofficial-project disclaimer.
 - A DNS tab in a deliberately restricted test-only mode.
 
