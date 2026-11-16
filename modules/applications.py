@@ -20,7 +20,8 @@ FIELD_CODES = re.compile(r"%(?:[fFuUdDnNickvm]|%)")
 def _data_dirs():
     home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
     system = [Path(p) for p in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":") if p]
-    return [home, *system]
+    exports = [Path.home() / ".local/share/flatpak/exports/share", Path("/var/lib/flatpak/exports/share")]
+    return list(dict.fromkeys([home, *system, *exports]))
 
 
 def _exec_tokens(value):
@@ -30,8 +31,21 @@ def _exec_tokens(value):
 def _resolve(tokens):
     if not tokens:
         return None, "Пустая команда запуска."
-    if Path(tokens[0]).name in {"flatpak", "snap"}:
-        return None, "Flatpak/Snap пока не поддерживаются: запуск внутри отдельной cgroup не гарантирован."
+    launcher = Path(tokens[0]).name
+    if launcher == "snap":
+        return None, "Snap пока не поддерживается: изоляция процессов Snap требует отдельной проверки."
+    if launcher == "flatpak":
+        flatpak = shutil.which("flatpak")
+        app_id = next((part for part in reversed(tokens[1:]) if not part.startswith("-") and re.fullmatch(r"[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)+", part)), None)
+        if not flatpak or not app_id:
+            return None, "Не удалось определить Flatpak application ID."
+        try:
+            check = subprocess.run([flatpak, "info", "--show-ref", app_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return None, "Не удалось проверить установленное Flatpak-приложение."
+        if check.returncode:
+            return None, f"Flatpak-приложение не установлено или недоступно: {app_id}"
+        return [flatpak, "run", app_id], ""
     if tokens[0] == "env":
         return None, "Exec через env пока не поддерживается."
     executable = tokens[0]
@@ -262,7 +276,8 @@ def apply_selection(mode: str, selected_ids, direct_paths=()):
     lines.extend([
         "Закройте уже запущенные приложения и запускайте их через новые ярлыки.",
         "После настройки переподключите AdGuard VPN, чтобы CLI применил route script.",
-        "Flatpak/Snap пока не поддерживаются. Системный DNS общий для системы, а не изолирован по процессам.",
+        "Flatpak запускается через flatpak run в созданной systemd-scope; маршрутизацию sandbox/DBus нужно проверить на этой системе.",
+        "Snap пока не поддерживается. Системный DNS общий для системы, а не изолирован по процессам.",
     ])
     return (0 if created or not chosen else 1), "\n".join(lines)
 
