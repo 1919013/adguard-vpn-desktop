@@ -12,6 +12,8 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import stat
 from pathlib import Path
 from typing import Sequence
 
@@ -214,6 +216,44 @@ def state_path() -> Path:
     return state / "adguard-vpn-desktop" / "app-routing-backup.json"
 
 
+def _atomic_write(path: Path, content: str, mode: int) -> None:
+    """Atomically replace a private config/script file in its own directory."""
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def _capability_problems(cgroup_path: str | None = None) -> list[str]:
+    missing = [name for name in ("systemd-run", "nft", "ip", "adguardvpn-cli", "pkexec")
+               if not shutil.which(name)]
+    problems = []
+    if missing:
+        problems.append("Не найдены команды: " + ", ".join(missing))
+    if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
+        problems.append("Требуется cgroup v2.")
+    try:
+        path = cgroup_path if cgroup_path is not None else current_user_cgroup_path()
+        cgroup_level_for_component(path, user_manager_component())
+        cgroup_level_for_slice(path)
+    except RoutingError as exc:
+        problems.append(str(exc))
+    if not os.environ.get("XDG_RUNTIME_DIR"):
+        problems.append("Не задан XDG_RUNTIME_DIR; пользовательская systemd-сессия недоступна.")
+    return problems
+
+
 def _run(args: Sequence[str], timeout: int = 25) -> tuple[int, str]:
     try:
         result = subprocess.run(list(args), text=True, stdout=subprocess.PIPE,
@@ -246,11 +286,10 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
     """Install a reversible route hook and configure the CLI for TUN/SCRIPT."""
     if mode not in VALID_MODES:
         return 2, "Выберите один из двух режимов раздельного туннелирования."
-    missing = [name for name in ("adguardvpn-cli", "systemd-run", "nft", "ip") if not shutil.which(name)]
-    if missing:
-        return 2, "Не найдены системные компоненты: " + ", ".join(missing)
-    if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
-        return 2, "Для маршрутизации приложений требуется cgroup v2."
+    problems = _capability_problems(cgroup_path)
+    if problems:
+        return 2, "; ".join(problems)
+
     try:
         path = cgroup_path if cgroup_path is not None else current_user_cgroup_path()
         manager_level = cgroup_level_for_component(path, user_manager_component())
@@ -264,8 +303,13 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
         return code, status_message
     state = state_path()
     hook = route_script_path()
-    if state.exists():
+    if state.exists() or state.is_symlink():
         return 2, "Раздельное туннелирование уже настроено. Сначала отключите его штатной кнопкой."
+    if hook.is_symlink():
+        return 2, "Файл route script является символической ссылкой; настройка отменена."
+    if hook.exists() and not hook.is_file():
+        return 2, "Путь route script существует, но не является обычным файлом."
+
     code, config = _run(["adguardvpn-cli", "config", "show"])
     if code:
         return code, config or "Не удалось прочитать конфигурацию AdGuard VPN CLI."
@@ -275,31 +319,33 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
         return 2, "Не удалось надёжно определить исходный режим VPN CLI; изменение отменено."
     if old_route_mode not in {"AUTO", "SCRIPT", "NONE"}:
         return 2, "Не удалось надёжно определить исходный режим маршрутизации; изменение отменено."
+
+    hook_existed = hook.is_file()
+    previous_script = hook.read_text(encoding="utf-8") if hook_existed else None
+    previous_mode = stat.S_IMODE(hook.stat().st_mode) if hook_existed else None
+    state_written = False
     try:
         hook.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         state.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if hook.is_symlink():
-            return 2, "Файл route script является символической ссылкой; настройка отменена."
-        if not hook.exists():
+        if not hook_existed:
             code, output = _run(["adguardvpn-cli", "config", "create-route-script"])
-            if code or not hook.is_file():
+            if code or not hook.is_file() or hook.is_symlink():
+                if hook.exists() and not hook.is_symlink() and hook.is_file():
+                    hook.unlink()
                 return code or 2, output or (
                     "AdGuard VPN CLI не создал ожидаемый route script: " + str(hook)
                 )
-        if hook.is_symlink():
-            return 2, "Файл route script является символической ссылкой; настройка отменена."
-        previous_script = hook.read_text(encoding="utf-8") if hook.exists() else None
         payload = {
             "version": 1, "mode": mode, "hook": str(hook),
             "previous_script": previous_script,
+            "previous_script_mode": previous_mode,
             "previous_vpn_mode": old_vpn_mode,
             "previous_route_mode": old_route_mode,
         }
-        # Save rollback data before touching CLI settings or the route hook.
-        state.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.chmod(state, 0o600)
-        hook.write_text(script, encoding="utf-8")
-        os.chmod(hook, 0o700)
+        # Persist rollback data before changing the hook or CLI settings.
+        _atomic_write(state, json.dumps(payload, ensure_ascii=False, indent=2), 0o600)
+        state_written = True
+        _atomic_write(hook, script, 0o700)
         code, output = _run(["adguardvpn-cli", "config", "set-mode", "TUN"])
         if code:
             raise RoutingError(output or "Не удалось включить режим TUN.")
@@ -307,22 +353,28 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
         if code:
             raise RoutingError(output or "Не удалось включить режим SCRIPT.")
     except Exception as exc:
-        # Best-effort rollback of the user's script and CLI settings.
+        rollback_errors = []
         try:
-            if "previous_script" in locals():
-                if previous_script is None:
-                    hook.unlink(missing_ok=True)
-                else:
-                    hook.write_text(previous_script, encoding="utf-8")
-                    os.chmod(hook, 0o700)
-            if old_vpn_mode != "UNKNOWN":
-                _run(["adguardvpn-cli", "config", "set-mode", old_vpn_mode])
-            if old_route_mode != "UNKNOWN":
-                _run(["adguardvpn-cli", "config", "set-tun-routing-mode", old_route_mode])
-            state.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return 1, f"Настройка отменена; выполнен откат, где это удалось: {exc}"
+            if previous_script is None:
+                hook.unlink(missing_ok=True)
+            else:
+                _atomic_write(hook, previous_script, previous_mode or 0o700)
+        except OSError as rollback_exc:
+            rollback_errors.append(f"route script: {rollback_exc}")
+        for args in (
+            ["adguardvpn-cli", "config", "set-tun-routing-mode", old_route_mode],
+            ["adguardvpn-cli", "config", "set-mode", old_vpn_mode],
+        ):
+            rollback_code, rollback_output = _run(args)
+            if rollback_code:
+                rollback_errors.append(rollback_output or "не удалось вернуть " + args[-1])
+        if state_written:
+            try:
+                state.unlink(missing_ok=True)
+            except OSError as rollback_exc:
+                rollback_errors.append(f"файл состояния: {rollback_exc}")
+        detail = (" Дополнительные ошибки отката: " + "; ".join(rollback_errors)) if rollback_errors else ""
+        return 1, f"Настройка отменена; выполнен откат, где это удалось: {exc}.{detail}"
     return 0, (
         "Настроен режим раздельного туннелирования TUN/SCRIPT. "
         "Переподключите VPN, чтобы AdGuard VPN CLI вызвал route script. "
@@ -337,6 +389,9 @@ def reconfigure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
     state = state_path()
     if not state.is_file() or state.is_symlink():
         return configure(mode, cgroup_path)
+    problems = _capability_problems(cgroup_path)
+    if problems:
+        return 2, "; ".join(problems)
     code, status_message = _require_disconnected()
     if code:
         return code, status_message
@@ -346,15 +401,15 @@ def reconfigure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
         app_level = cgroup_level_for_slice(path)
         script = route_script(mode, app_level, manager_level)
         payload = json.loads(state.read_text(encoding="utf-8"))
+        if payload.get("version") != 1 or not isinstance(payload.get("previous_vpn_mode"), str):
+            raise RoutingError("Файл резервной копии имеет неизвестный формат.")
         hook = Path(payload["hook"])
-        if hook != route_script_path() or hook.is_symlink():
+        if hook != route_script_path() or hook.is_symlink() or not hook.is_file():
             raise RoutingError("Путь route script не совпадает с сохранённым безопасным путём.")
-        hook.write_text(script, encoding="utf-8")
-        os.chmod(hook, 0o700)
+        _atomic_write(hook, script, 0o700)
         payload["mode"] = mode
-        state.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.chmod(state, 0o600)
-        return 0, "Режим изменён. Переподключите VPN для применения новой политики."
+        _atomic_write(state, json.dumps(payload, ensure_ascii=False, indent=2), 0o600)
+        return 0, "Режим изменён. Отключите и снова подключите VPN для применения новой политики."
     except (OSError, ValueError, KeyError, TypeError, RoutingError) as exc:
         return 1, f"Не удалось изменить режим: {exc}"
 
@@ -377,35 +432,45 @@ def disable() -> tuple[int, str]:
         return code, status_message
     try:
         payload = json.loads(state.read_text(encoding="utf-8"))
+        if payload.get("version") != 1:
+            raise RoutingError("Файл резервной копии имеет неизвестный формат.")
         hook = Path(payload["hook"])
         if hook != route_script_path() or hook.is_symlink():
             raise RoutingError("Путь route script не совпадает с сохранённым безопасным путём.")
         code, output = cleanup_kernel_state()
         if code:
             return code, output or "Не удалось очистить правила маршрутизации (pkexec)."
+
+        # Restore CLI behavior first; retain the custom hook and backup if a
+        # CLI command fails, so the user can safely retry the operation.
+        route_mode = payload.get("previous_route_mode")
+        vpn_mode = payload.get("previous_vpn_mode")
+        if route_mode not in {"AUTO", "SCRIPT", "NONE"} or vpn_mode not in {"TUN", "SOCKS"}:
+            raise RoutingError("В резервной копии отсутствуют корректные исходные режимы CLI.")
+        code, output = _run(["adguardvpn-cli", "config", "set-tun-routing-mode", route_mode])
+        if code:
+            return code, "Не удалось вернуть прежний режим маршрутизации CLI: " + output
+        code, output = _run(["adguardvpn-cli", "config", "set-mode", vpn_mode])
+        if code:
+            return code, "Не удалось вернуть прежний режим VPN CLI: " + output
+
         previous = payload.get("previous_script")
+        if previous is not None and not isinstance(previous, str):
+            raise RoutingError("Содержимое исходного route script повреждено.")
         if previous is None:
             hook.unlink(missing_ok=True)
         else:
-            hook.write_text(previous, encoding="utf-8")
-            os.chmod(hook, 0o700)
-        route_mode = payload.get("previous_route_mode")
-        vpn_mode = payload.get("previous_vpn_mode")
-        if route_mode and route_mode != "UNKNOWN":
-            code, output = _run(["adguardvpn-cli", "config", "set-tun-routing-mode", route_mode])
-            if code:
-                return code, "Скрипт восстановлен, но не удалось вернуть режим маршрутизации CLI: " + output
-        if vpn_mode and vpn_mode != "UNKNOWN":
-            code, output = _run(["adguardvpn-cli", "config", "set-mode", vpn_mode])
-            if code:
-                return code, "Маршрутизация восстановлена, но не удалось вернуть режим VPN CLI: " + output
+            _atomic_write(hook, previous, int(payload.get("previous_script_mode") or 0o700))
         state.unlink(missing_ok=True)
-        return 0, "Раздельное туннелирование отключено; собственные маршруты и прежний route script восстановлены."
+        return 0, "Раздельное туннелирование отключено; собственные маршруты и прежние настройки CLI восстановлены."
     except (OSError, ValueError, KeyError, TypeError, RoutingError) as exc:
         return 1, f"Не удалось безопасно восстановить настройки: {exc}"
 
 
 def check_capabilities() -> tuple[bool, list[str]]:
+    problems = _capability_problems()
+    return not problems, problems
+
     missing = [name for name in ("systemd-run", "nft", "ip", "adguardvpn-cli", "pkexec") if not shutil.which(name)]
     problems = []
     if missing:
