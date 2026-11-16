@@ -191,6 +191,15 @@ then
   cleanup
   exit 1
 fi
+# The current CLI SCRIPT interface has no separate teardown callback. Watch
+# for removal of this TUN link so manual CLI disconnects also release our
+# private policy rules, route table and nftables table.
+(
+  while [ -d "/sys/class/net/$IFACE" ]; do
+    sleep 1
+  done
+  cleanup
+) </dev/null >/dev/null 2>&1 &
 '''
 
 
