@@ -27,8 +27,11 @@ class DNSController:
         return self.manager.create_backup()
 
     def apply(self, dns_servers=None) -> None:
-        if dns_servers:
-            self.manager.apply_dns_servers(dns_servers)
+        if dns_servers is not None:
+            if dns_servers:
+                self.manager.apply_dns_servers(dns_servers)
+            else:
+                self.manager.restore()
         else:
             self.manager.apply_adguard_dns()
 
