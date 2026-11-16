@@ -287,6 +287,17 @@ class DNSManager:
             raise DNSManagerError("Rollback incomplete: " + "; ".join(errors))
 
     def apply_adguard_dns(self) -> None:
+        self.apply_dns_servers(ADGUARD_DNS)
+
+    def apply_dns_servers(self, dns_servers) -> None:
+        """Apply validated resolver IPs to explicitly allowlisted test profiles only."""
+        import ipaddress
+        try:
+            servers = tuple(str(ipaddress.ip_address(value)) for value in dns_servers)
+        except (TypeError, ValueError) as exc:
+            raise DNSManagerError("Invalid DNS server address") from exc
+        if not servers or len(servers) > 6 or len(set(servers)) != len(servers):
+            raise DNSManagerError("Provide between one and six unique DNS addresses")
         lock_fd = self._locked()
         try:
             connected, detail = self.vpn_status()
@@ -304,7 +315,7 @@ class DNSManager:
             desired = {}
             for profile, settings in snapshot.items():
                 changed = dict(settings)
-                changed["ipv4.dns"] = " ".join(ADGUARD_DNS)
+                changed["ipv4.dns"] = " ".join(servers)
                 changed["ipv4.ignore-auto-dns"] = "yes"
                 # IPv6 and all other fields are intentionally preserved.
                 desired[profile] = changed
