@@ -7,7 +7,7 @@ from services.app_routing import (
     APP_SLICE, DIRECT_MARK, FWMARK, NFT_TABLE, ROUTE_TABLE,
     cgroup_level_for_component, cgroup_level_for_slice,
     nft_ruleset, route_script, scope_command, user_manager_component,
-    RoutingError,
+    RoutingError, configure,
 )
 
 
@@ -76,6 +76,69 @@ class AppRoutingPlannerTests(unittest.TestCase):
         self.assertIn(f"--slice={APP_SLICE}", command)
         self.assertEqual(command[-2:], ["--url", "https://example.test"])
         self.assertTrue(command[4].endswith(".scope"))
+
+    def test_atomic_file_writer_preserves_requested_permissions(self):
+        from services.app_routing import _atomic_write
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "private.conf"
+            _atomic_write(target, "safe content", 0o600)
+            self.assertEqual(target.read_text(encoding="utf-8"), "safe content")
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+
+    def test_failed_cli_configuration_restores_existing_route_script(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            hook = root / "setup_routes.sh"
+            state = root / "backup.json"
+            hook.write_text("#!/bin/sh\necho original\n", encoding="utf-8")
+            hook.chmod(0o640)
+
+            def fake_run(args, timeout=25):
+                if args == ["adguardvpn-cli", "config", "show"]:
+                    return 0, "VPN mode: SOCKS\nTUN routing mode: AUTO"
+                if args == ["adguardvpn-cli", "config", "set-tun-routing-mode", "SCRIPT"]:
+                    return 1, "simulated CLI failure"
+                return 0, "ok"
+
+            with patch("services.app_routing._capability_problems", return_value=[]), \
+                 patch("services.app_routing._require_disconnected", return_value=(0, "")), \
+                 patch("services.app_routing.route_script_path", return_value=hook), \
+                 patch("services.app_routing.state_path", return_value=state), \
+                 patch("services.app_routing._run", side_effect=fake_run):
+                code, message = configure("selected", self.PATH)
+
+            self.assertNotEqual(code, 0)
+            self.assertIn("откат", message)
+            self.assertEqual(hook.read_text(encoding="utf-8"), "#!/bin/sh\necho original\n")
+            self.assertEqual(stat.S_IMODE(hook.stat().st_mode), 0o640)
+            self.assertFalse(state.exists())
+
+    def test_failed_cli_configuration_removes_newly_created_route_script(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            hook = root / "setup_routes.sh"
+            state = root / "backup.json"
+
+            def fake_run(args, timeout=25):
+                if args == ["adguardvpn-cli", "config", "show"]:
+                    return 0, "VPN mode: SOCKS\nTUN routing mode: AUTO"
+                if args == ["adguardvpn-cli", "config", "create-route-script"]:
+                    hook.write_text("#!/bin/sh\n", encoding="utf-8")
+                    return 0, "created"
+                if args == ["adguardvpn-cli", "config", "set-mode", "TUN"]:
+                    return 1, "simulated CLI failure"
+                return 0, "ok"
+
+            with patch("services.app_routing._capability_problems", return_value=[]), \
+                 patch("services.app_routing._require_disconnected", return_value=(0, "")), \
+                 patch("services.app_routing.route_script_path", return_value=hook), \
+                 patch("services.app_routing.state_path", return_value=state), \
+                 patch("services.app_routing._run", side_effect=fake_run):
+                code, _ = configure("selected", self.PATH)
+
+            self.assertNotEqual(code, 0)
+            self.assertFalse(hook.exists())
+            self.assertFalse(state.exists())
 
 
 if __name__ == "__main__":
