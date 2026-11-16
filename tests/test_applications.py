@@ -18,10 +18,12 @@ class ApplicationDiscoveryTests(unittest.TestCase):
         self.assertEqual(reason, "")
         self.assertEqual(command, [str(Path(sys.executable).resolve()), "-V"])
 
-    def test_flatpak_is_marked_unsupported(self):
-        command, reason = _resolve(["flatpak", "run", "org.example.App"])
-        self.assertIsNone(command)
-        self.assertIn("Flatpak", reason)
+    def test_flatpak_resolves_to_flatpak_run_inside_launcher_scope(self):
+        with patch("modules.applications.shutil.which", return_value="/usr/bin/flatpak"), patch("modules.applications.subprocess.run") as run:
+            run.return_value.returncode = 0
+            command, reason = _resolve(["flatpak", "run", "--branch=stable", "org.example.App"])
+        self.assertEqual(reason, "")
+        self.assertEqual(command, ["/usr/bin/flatpak", "run", "org.example.App"])
 
     def test_discover_apps_from_xdg_directory(self):
         with tempfile.TemporaryDirectory() as temp:
