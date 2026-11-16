@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import threading
+import tempfile
 from pathlib import Path
 
 from services import app_routing
@@ -115,9 +116,13 @@ def _remove_generated_files() -> tuple[int, str]:
     for directory in directories:
         if directory.is_dir():
             for item in directory.iterdir():
-                if item.is_file() and not item.is_symlink():
-                    item.unlink()
-                    removed += 1
+                if item.is_symlink() or not item.is_file():
+                    return 2, f"Неожиданный объект в каталоге ярлыков; операция отменена: {item}"
+    for directory in directories:
+        if directory.is_dir():
+            for item in directory.iterdir():
+                item.unlink()
+                removed += 1
     update = shutil.which("update-desktop-database")
     if update:
         subprocess.run([update, str(data / "applications")], stdout=subprocess.DEVNULL,
@@ -125,10 +130,30 @@ def _remove_generated_files() -> tuple[int, str]:
     return 0, f"Обновлено. Удалено старых VPN-ярлыков и скриптов: {removed}."
 
 
+def _atomic_state_write(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
 def apply_selection(mode: str, selected_ids, direct_paths=()):
     """Configure TUN policy and create alternate launchers in the managed cgroup."""
     if mode not in app_routing.VALID_MODES:
         return 2, "Неизвестный режим."
+    selected_ids = set(selected_ids)
+    direct_paths = list(direct_paths)
     apps = {app["id"]: app for app in discover_apps()}
     chosen = []
     for app_id in selected_ids:
@@ -148,27 +173,50 @@ def apply_selection(mode: str, selected_ids, direct_paths=()):
         resolved = str(path.resolve())
         chosen.append((resolved, path.name, [resolved], "application-x-executable", False))
 
+    if mode == "selected" and not chosen:
+        return 2, "В режиме «Только выбранные» отметьте хотя бы одно приложение или добавьте путь."
+
+    # Preflight every dependency and managed path before changing CLI settings.
+    ok, problems = app_routing.check_capabilities()
+    if not ok:
+        return 2, "Нельзя включить раздельное туннелирование: " + "; ".join(problems)
+    systemd_run = shutil.which("systemd-run")
+    if not systemd_run:
+        return 2, "Не найдена команда systemd-run."
+    data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    launcher_dir = data / "applications" / "adguard-vpn-routed"
+    bin_dir = data / "adguard-vpn-desktop" / "bin"
+    for directory in (launcher_dir, bin_dir, launcher_dir.parent, bin_dir.parent):
+        if directory.is_symlink():
+            return 2, f"Каталог является символической ссылкой: {directory}"
+    try:
+        launcher_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        bin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError as exc:
+        return 1, f"Не удалось подготовить каталоги ярлыков: {exc}"
+    # Validate existing managed content before modifying the VPN CLI config.
+    for directory in (launcher_dir, bin_dir):
+        if directory.is_dir():
+            for item in directory.iterdir():
+                if item.is_symlink() or not item.is_file():
+                    return 2, f"Неожиданный объект в каталоге ярлыков; настройка отменена: {item}"
+    was_configured = app_routing.state_path().is_file()
+    _, _, previous_mode = load_selection()
     # Install or update the reversible AdGuard route hook before publishing
     # launchers. If this fails, the current set of launchers remains untouched.
     code, output = app_routing.reconfigure(mode)
     if code:
         return code, output
-
-    data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
-    launcher_dir = data / "applications" / "adguard-vpn-routed"
-    bin_dir = data / "adguard-vpn-desktop" / "bin"
-    for directory in (launcher_dir, bin_dir):
-        if directory.is_symlink():
-            return 2, f"Каталог является символической ссылкой: {directory}"
+    cleanup_code, cleanup_output = _remove_generated_files()
+    if cleanup_code:
+        # Keep the previous routing policy if launcher cleanup cannot proceed.
+        if was_configured:
+            app_routing.reconfigure(previous_mode)
+        else:
+            app_routing.disable()
+        return cleanup_code, cleanup_output
     launcher_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     bin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    _remove_generated_files()
-    launcher_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    bin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-
-    systemd_run = shutil.which("systemd-run")
-    if not systemd_run:
-        return 2, "Не найдена команда systemd-run."
     created, errors = [], []
     for index, (app_id, name, tokens, icon, terminal) in enumerate(chosen):
         try:
@@ -195,12 +243,10 @@ def apply_selection(mode: str, selected_ids, direct_paths=()):
             errors.append(f"{name}: {exc}")
 
     state = _state_file()
-    state.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    state.write_text(json.dumps({
+    _atomic_state_write(state, {
         "mode": mode, "selected": sorted(selected_ids),
         "direct_paths": sorted(set(str(Path(p).expanduser().resolve()) for p in direct_paths)),
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.chmod(state, 0o600)
+    })
     update = shutil.which("update-desktop-database")
     if update:
         subprocess.run([update, str(data / "applications")], stdout=subprocess.DEVNULL,
