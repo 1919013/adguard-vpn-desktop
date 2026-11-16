@@ -26,8 +26,11 @@ class DNSController:
     def create_backup(self):
         return self.manager.create_backup()
 
-    def apply(self) -> None:
-        self.manager.apply_adguard_dns()
+    def apply(self, dns_servers=None) -> None:
+        if dns_servers:
+            self.manager.apply_dns_servers(dns_servers)
+        else:
+            self.manager.apply_adguard_dns()
 
     def validate_backup(self) -> dict:
         return self.manager.validate_backup()
@@ -65,9 +68,45 @@ def build_dns_tab(manager: DNSManager | None = None):
     )
     root.pack_start(warning, False, False, 0)
 
-    profile_label = Gtk.Label(label="DNS AdGuard: 46.243.231.30, 46.243.231.31")
+    providers = {
+        "AdGuard DNS — блокировка рекламы": ("94.140.14.14", "94.140.15.15"),
+        "AdGuard DNS — без фильтрации": ("94.140.14.140", "94.140.14.141"),
+        "AdGuard DNS — семейный": ("94.140.14.15", "94.140.15.16"),
+        "Cloudflare": ("1.1.1.1", "1.0.0.1"),
+        "Cloudflare — вредоносные домены": ("1.1.1.2", "1.0.0.2"),
+        "Google Public DNS": ("8.8.8.8", "8.8.4.4"),
+        "OpenDNS": ("208.67.222.222", "208.67.220.220"),
+        "Quad9": ("9.9.9.9", "149.112.112.112"),
+        "Mullvad DNS": ("194.242.2.2", "194.242.2.3"),
+        "Системный DNS — не менять": (),
+        "Свой DNS": None,
+    }
+    provider = Gtk.ComboBoxText()
+    for label in providers:
+        provider.append_text(label)
+    provider.set_active(0)
+    root.pack_start(provider, False, False, 0)
+    custom_dns = Gtk.Entry()
+    custom_dns.set_placeholder_text("Свой DNS: IPv4/IPv6 через запятую")
+    root.pack_start(custom_dns, False, False, 0)
+    profile_label = Gtk.Label(label="Применение ограничено разрешёнными тестовыми профилями NetworkManager.")
     profile_label.set_xalign(0)
+    profile_label.set_line_wrap(True)
     root.pack_start(profile_label, False, False, 0)
+
+    def selected_dns():
+        label = provider.get_active_text()
+        servers = providers.get(label)
+        if servers is None:
+            import ipaddress
+            raw = [part.strip() for part in custom_dns.get_text().replace(";", ",").split(",") if part.strip()]
+            if not raw:
+                raise ValueError("Введите хотя бы один адрес DNS.")
+            try:
+                return tuple(str(ipaddress.ip_address(value)) for value in raw)
+            except ValueError as exc:
+                raise ValueError("Введите корректные IPv4/IPv6-адреса.") from exc
+        return servers
 
     status_view = Gtk.TextView()
     status_view.set_editable(False)
@@ -218,13 +257,13 @@ def build_dns_tab(manager: DNSManager | None = None):
     )
     add_button(
         action_row2, "Применить AdGuard DNS",
-        "Изменить только разрешённые неактивные тестовые профили",
+        "Применить выбранный DNS только к разрешённым неактивным тестовым профилям",
         lambda: confirm(
             "Будут изменены DNS-параметры только тестовых профилей. "
             "Перед применением убедитесь, что резервная копия создана. "
             "Рабочие профили не затрагиваются.",
-            lambda: run_async("Применение AdGuard DNS", controller.apply,
-                              lambda _result: "AdGuard DNS применён. IPv6-параметры сохранены."),
+            lambda: run_async("Применение выбранного DNS", lambda: controller.apply(selected_dns()),
+                              lambda _result: "Выбранный DNS применён к тестовым профилям. IPv6-параметры сохранены."),
         ),
     )
     add_button(
