@@ -8,6 +8,8 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+from ui.dialogs import confirm_dialog
+
 INSTALLER_URL = "https://raw.githubusercontent.com/AdguardTeam/AdGuardVPNCLI/HEAD/scripts/release/install.sh"
 AUTOSTART_NAME = "adguardvpn-cli.desktop"
 
@@ -325,16 +327,9 @@ def build_adguard_info_tab():
         threading.Thread(target=worker, daemon=True).start()
 
     def confirm(label, description, operation):
-        dialog = Gtk.MessageDialog(
-            transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
-            flags=Gtk.DialogFlags.MODAL, message_type=Gtk.MessageType.WARNING,
-            buttons=Gtk.ButtonsType.CANCEL, text=label,
-        )
-        dialog.format_secondary_text(description)
-        dialog.add_button("Продолжить", Gtk.ResponseType.OK)
-        answer = dialog.run()
-        dialog.destroy()
-        if answer == Gtk.ResponseType.OK:
+        if confirm_dialog(
+            root.get_toplevel(), label, description, accept_label="Продолжить",
+        ):
             run_async(label, operation)
 
     def add(row, label, tooltip, callback):
