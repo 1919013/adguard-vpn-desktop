@@ -124,8 +124,8 @@ def get_active_vpn_interface() -> str | None:
     code, output = _run(["adguardvpn-cli", "status"])
     if code:
         return None
-    clean = re.sub(r"\\x1b\\[[0-9;]*m", "", output)
-    match = re.search(r"(?:running\\s+on|interface\\s*[:=])\\s*([A-Za-z0-9_.:-]+)", clean, re.IGNORECASE)
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
+    match = re.search(r"(?:running\s+on|interface\s*[:=])\s*([A-Za-z0-9_.:-]+)", clean, re.IGNORECASE)
     return match.group(1) if match else None
 
 
