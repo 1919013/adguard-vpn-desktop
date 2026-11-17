@@ -36,7 +36,7 @@ def _resolve(tokens):
         return None, "Snap пока не поддерживается: изоляция процессов Snap требует отдельной проверки."
     if launcher == "flatpak":
         flatpak = shutil.which("flatpak")
-        app_id = next((part for part in reversed(tokens[1:]) if not part.startswith("-") and re.fullmatch(r"[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)+", part)), None)
+        app_id = next((part for part in reversed(tokens[1:]) if not part.startswith("-") and re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+", part)), None)
         if not flatpak or not app_id:
             return None, "Не удалось определить Flatpak application ID."
         try:
