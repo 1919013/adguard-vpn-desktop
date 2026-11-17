@@ -235,10 +235,9 @@ def build_interfaces_tab():
             GLib.idle_add(finish_discovery, result)
         threading.Thread(target=worker, daemon=True).start()
 
-    def finish_apply(result, name):
+    def finish_apply(result, name, vpn_iface):
         set_busy(False)
         code, output = result
-        vpn_iface = get_active_vpn_interface()
         active_vpn.set_text(f"AdGuard VPN сейчас работает через интерфейс: {vpn_iface}" if vpn_iface else "AdGuard VPN сейчас не подключён (TUN-интерфейс не обнаружен).")
         status.set_text(
             ("Настройка применена: " + (name or "автоматический выбор интерфейса") + "\n" + output)
@@ -252,7 +251,8 @@ def build_interfaces_tab():
         status.set_text("Применение настройки AdGuard VPN CLI…")
         def worker():
             result = bind_interface(name)
-            GLib.idle_add(finish_apply, result, name)
+            vpn_iface = get_active_vpn_interface()
+            GLib.idle_add(finish_apply, result, name, vpn_iface)
         threading.Thread(target=worker, daemon=True).start()
 
     def clear_selection():
