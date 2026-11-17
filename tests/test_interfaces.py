@@ -49,6 +49,16 @@ class NetworkInterfaceTests(unittest.TestCase):
         self.assertEqual(found[0].name, "enx123")
         self.assertEqual(found[0].state, "не управляется NetworkManager")
 
+    def test_active_vpn_interface_parses_status_and_ansi(self):
+        from modules.interfaces import get_active_vpn_interface
+        with patch("modules.interfaces._run", return_value=(0, "\\x1b[32mVPN running on tun0\\x1b[0m")):
+            self.assertEqual(get_active_vpn_interface(), "tun0")
+
+    def test_active_vpn_interface_parses_interface_field(self):
+        from modules.interfaces import get_active_vpn_interface
+        with patch("modules.interfaces._run", return_value=(0, "Interface: tun-adguard")):
+            self.assertEqual(get_active_vpn_interface(), "tun-adguard")
+
     def test_invalid_ip_json_is_reported(self):
         with patch("modules.interfaces._run", return_value=(0, "not-json")):
             with self.assertRaisesRegex(RuntimeError, "некорректный список"):
