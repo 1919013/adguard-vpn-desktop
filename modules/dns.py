@@ -8,6 +8,8 @@ from __future__ import annotations
 import threading
 from typing import Callable
 
+from ui.dialogs import confirm_dialog
+
 from services.dns_manager import DNSManager, DNSManagerError, TEST_PROFILES
 
 
@@ -206,18 +208,10 @@ def build_dns_tab(manager: DNSManager | None = None):
         return "\n".join(lines)
 
     def confirm(message: str, callback: Callable):
-        dialog = Gtk.MessageDialog(
-            transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
-            flags=Gtk.DialogFlags.MODAL,
-            message_type=Gtk.MessageType.WARNING,
-            buttons=Gtk.ButtonsType.CANCEL,
-            text="Подтвердите операцию",
-        )
-        dialog.format_secondary_text(message)
-        dialog.add_button("Продолжить", Gtk.ResponseType.OK)
-        response = dialog.run()
-        dialog.destroy()
-        if response == Gtk.ResponseType.OK:
+        if confirm_dialog(
+            root.get_toplevel(), "Подтвердите операцию", message,
+            accept_label="Продолжить",
+        ):
             callback()
 
     def add_button(parent, label, tooltip, callback):
