@@ -6,6 +6,8 @@ import shutil
 import subprocess
 from typing import Iterable
 
+from ui.dialogs import confirm_dialog
+
 VALID_MODES = {"general", "selective"}
 DOMAIN_RE = re.compile(r"^(?:\*\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$")
 
@@ -151,16 +153,11 @@ def build_site_exclusions_tab():
                 status.set_text(str(exc))
                 return
         if action == "clear":
-            dialog = Gtk.MessageDialog(
-                transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
-                flags=Gtk.DialogFlags.MODAL, message_type=Gtk.MessageType.WARNING,
-                buttons=Gtk.ButtonsType.CANCEL, text="Очистить список сайтов?",
-            )
-            dialog.format_secondary_text("Будут удалены все домены из единственного списка исключений AdGuard VPN CLI.")
-            dialog.add_button("Очистить", Gtk.ResponseType.OK)
-            answer = dialog.run()
-            dialog.destroy()
-            if answer != Gtk.ResponseType.OK:
+            if not confirm_dialog(
+                root.get_toplevel(), "Очистить список сайтов?",
+                "Будут удалены все домены из единственного списка исключений AdGuard VPN CLI.",
+                accept_label="Очистить",
+            ):
                 return
         for button in (*widgets.values(), apply_mode):
             button.set_sensitive(False)
