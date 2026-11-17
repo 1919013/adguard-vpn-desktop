@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 from services import app_routing
+from ui.dialogs import confirm_dialog
 
 FIELD_CODES = re.compile(r"%(?:[fFuUdDnNickvm]|%)")
 
@@ -408,19 +409,12 @@ def build_applications_tab():
     apply_btn.connect("clicked", apply)
 
     def disable(*_):
-        dialog = Gtk.MessageDialog(
-            transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
-            flags=Gtk.DialogFlags.MODAL, message_type=Gtk.MessageType.WARNING,
-            buttons=Gtk.ButtonsType.CANCEL, text="Отключить раздельное туннелирование?",
-        )
-        dialog.format_secondary_text(
+        if not confirm_dialog(
+            root.get_toplevel(), "Отключить раздельное туннелирование?",
             "Будут удалены только выделенные правила маршрутизации, восстановлены прежний route script "
-            "и настройки AdGuard VPN CLI. Перед отключением рекомендуется разорвать VPN-соединение."
-        )
-        dialog.add_button("Отключить", Gtk.ResponseType.OK)
-        answer = dialog.run()
-        dialog.destroy()
-        if answer != Gtk.ResponseType.OK:
+            "и настройки AdGuard VPN CLI. Перед отключением рекомендуется разорвать VPN-соединение.",
+            accept_label="Отключить",
+        ):
             return
         set_busy(True)
         status.set_text("Очистка выделенных правил и восстановление настроек…")
