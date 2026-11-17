@@ -10,7 +10,7 @@ An independent desktop GUI for **AdGuard VPN CLI** on Linux. This project is not
 - AdGuard VPN CLI management: installation detection, official install/update workflow, status, connect/disconnect, cache and user-data cleanup, and separate CLI/GUI autostart controls.
 - Dynamic network-interface discovery and the AdGuard VPN CLI outbound-interface override. Personal NetworkManager profile names are not hard-coded.
 - A website-exclusions tab using the CLI's native General and Selective lists.
-- Per-application TUN split tunneling with two modes, generated application launchers, systemd user scopes, cgroup v2, nftables socket matching, and dedicated IPv4/IPv6 policy routing.
+- Experimental per-application TUN split tunneling with two modes, generated application launchers, systemd user scopes, cgroup v2, nftables socket matching, and dedicated IPv4/IPv6 policy routing. Flatpak desktop entries are discovered and launched with `flatpak run` inside a scope, but actual sandbox/DBus traffic routing still requires target-system validation.
 - Browser-based help with an explicit unofficial-project disclaimer.
 - A DNS tab in a deliberately restricted test-only mode.
 
@@ -28,7 +28,7 @@ There is one domain list and one active mode; changing the mode changes how that
 
 Application routing uses AdGuard VPN CLI's native SCRIPT routing mode with TUN. “Only selected apps” marks sockets from apps launched through generated systemd-scope launchers. “All except selected” marks processes in the current user's systemd session for VPN and overrides the selected app scopes to use the main routing table. Marked traffic uses a dedicated route table and IPv4/IPv6 policy rules; the main routing table is not rewritten; private, link-local and multicast destinations remain on the main table for LAN access. Disconnect VPN before changing the policy, then reconnect after applying it. The disable action removes only the app's owned rules and restores the previous route script and CLI settings.
 
-Limitations: already-running apps must be closed and relaunched through the generated launchers; Flatpak/Snap are not supported yet. DNS is not split per application: systemd-resolved requests are routed through the VPN in both modes, including for apps whose other traffic bypasses the tunnel. Other resolver implementations need separate validation. nftables socket-cgroup matching classifies socket-associated packets; raw/ICMP traffic and some sandbox scenarios need dedicated validation. Passing CI does not replace integration testing on Debian/Cinnamon. Do not enable this on a production system before that test.
+Limitations: already-running apps must be closed and relaunched through the generated launchers. Flatpak is discovered and launched in the managed scope, but sandbox/DBus traffic routing is not yet verified; Snap is not supported. DNS is not split per application: systemd-resolved requests are routed through the VPN in both modes, including for apps whose other traffic bypasses the tunnel. Other resolver implementations need separate validation. nftables socket-cgroup matching classifies socket-associated packets; raw/ICMP traffic and some sandbox scenarios need dedicated validation. Passing CI does not replace integration testing on Debian/Cinnamon. Do not enable this on a production system before that test.
 
 ## DNS
 
@@ -40,7 +40,7 @@ The interface tab discovers current non-loopback, non-tunnel devices and applies
 
 ## Development and checks
 
-The active development branch is `feature/large-feature-blocks`; see [pull request #2](https://github.com/1919013/adguard-vpn-desktop/pull/2).
+The active 0.2.0 preparation branch is `release/0.2.0`; see [draft pull request #3](https://github.com/1919013/adguard-vpn-desktop/pull/3).
 
 Run headless checks with:
 
