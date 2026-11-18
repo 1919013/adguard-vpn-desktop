@@ -81,7 +81,7 @@ class DNSManager:
         # The CLI may assign tun0, tun1, etc.; do not assume a fixed
         # interface number when confirming TUN mode.
         running_tun = re.search(
-            r"VPN is running on ([A-Za-z0-9_.:-]+)", clean, re.IGNORECASE
+            r"(?:VPN is )?running on ([A-Za-z0-9_.:-]+)", clean, re.IGNORECASE
         )
         connected = code == 0 and "Connected to " in clean and bool(running_tun)
         return connected, clean
