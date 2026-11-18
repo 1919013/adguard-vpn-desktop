@@ -284,10 +284,27 @@ def apply_selection(mode: str, selected_ids, direct_paths=()):
 
 
 def remove_routing():
+    # Validate that there is an owned routing configuration before touching
+    # launchers. Remove launchers first: if cleanup fails, keep the route hook
+    # and its rollback snapshot intact so the user can retry safely.
+    routing_state = app_routing.state_path()
+    if not routing_state.is_file() or routing_state.is_symlink():
+        return app_routing.disable()
+
+    cleanup_code, cleanup_output = _remove_generated_files()
+    if cleanup_code:
+        return cleanup_code, (
+            "Не удалось удалить созданные ярлыки и скрипты; настройки VPN "
+            "не изменены. Исправьте указанную проблему и повторите попытку.\n"
+            + cleanup_output
+        )
+
     code, output = app_routing.disable()
     if code:
-        return code, output
-    _remove_generated_files()
+        return code, (
+            output + "\nСозданные ярлыки уже удалены, но настройки маршрутизации "
+            "сохранены. Повторите отключение после устранения ошибки."
+        )
     state = _state_file()
     if state.exists() and not state.is_symlink():
         state.unlink()
