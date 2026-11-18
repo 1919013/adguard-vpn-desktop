@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from modules.applications import _exec_tokens, _resolve, discover_apps
+from modules.applications import _exec_tokens, _resolve, discover_apps, remove_routing
 
 
 class ApplicationDiscoveryTests(unittest.TestCase):
@@ -45,6 +45,57 @@ class ApplicationDiscoveryTests(unittest.TestCase):
             self.assertEqual(len(found), 1)
             self.assertEqual(found[0]["name"], "Telegram Test")
             self.assertTrue(found[0]["supported"])
+
+
+class RoutingRemovalTests(unittest.TestCase):
+    def test_launcher_cleanup_failure_keeps_routing_configuration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            routing_state = Path(temp) / "routing-backup.json"
+            routing_state.write_text("{}", encoding="utf-8")
+            selection_dir = Path(temp) / "selection"
+            selection_dir.mkdir()
+            selection_state = selection_dir / "routed-apps.json"
+            selection_state.write_text("{}", encoding="utf-8")
+
+            with patch("modules.applications.app_routing.state_path", return_value=routing_state), \
+                 patch("modules.applications._state_file", return_value=selection_state), \
+                 patch("modules.applications._remove_generated_files",
+                       return_value=(2, "unexpected managed file")), \
+                 patch("modules.applications.app_routing.disable") as disable:
+                code, message = remove_routing()
+
+            self.assertEqual(code, 2)
+            self.assertIn("настройки VPN не изменены", message)
+            self.assertTrue(routing_state.exists())
+            self.assertTrue(selection_state.exists())
+            disable.assert_not_called()
+
+    def test_successful_removal_cleans_launchers_before_disabling_routing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            routing_state = Path(temp) / "routing-backup.json"
+            routing_state.write_text("{}", encoding="utf-8")
+            selection_state = Path(temp) / "routed-apps.json"
+            selection_state.write_text("{}", encoding="utf-8")
+            calls = []
+
+            def cleanup():
+                calls.append("cleanup")
+                return 0, "cleaned"
+
+            def disable():
+                calls.append("disable")
+                return 0, "routing disabled"
+
+            with patch("modules.applications.app_routing.state_path", return_value=routing_state), \
+                 patch("modules.applications._state_file", return_value=selection_state), \
+                 patch("modules.applications._remove_generated_files", side_effect=cleanup), \
+                 patch("modules.applications.app_routing.disable", side_effect=disable):
+                code, message = remove_routing()
+
+            self.assertEqual(code, 0, message)
+            self.assertEqual(calls, ["cleanup", "disable"])
+            self.assertFalse(selection_state.exists())
+            self.assertIn("оригинальные ярлыки не затронуты", message)
 
 
 if __name__ == "__main__":
