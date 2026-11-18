@@ -47,11 +47,51 @@ def get_status() -> str:
     ])
 
 
-def install_official() -> tuple[int, str]:
-    """Fetch the official release installer over HTTPS and run it as the user.
+def _run_installer_in_terminal(script_path: Path, timeout: int = 900) -> tuple[int, str]:
+    """Run the official installer in a real terminal so sudo can prompt safely.
 
-    The official script requests elevation itself when required. It is not
-    piped to a shell, and the downloaded temporary file is removed afterwards.
+    No password is read, stored, or passed by this application. The installer
+    receives an interactive TTY and the terminal remains open until Enter.
+    """
+    wrapper = (
+        'sh "$1" -v; result=$?; '
+        'printf "\\nInstaller exit code: %s\\n" "$result"; '
+        'read -r -p "Нажмите Enter, чтобы закрыть это окно..." _; '
+        'exit "$result"'
+    )
+    x_terminal = shutil.which("x-terminal-emulator")
+    gnome_terminal = shutil.which("gnome-terminal")
+    if x_terminal:
+        command = [x_terminal, "-e", "sh", "-c", wrapper,
+                   "adguardvpn-cli-installer", str(script_path)]
+    elif gnome_terminal:
+        command = [gnome_terminal, "--wait", "--", "sh", "-c", wrapper,
+                   "adguardvpn-cli-installer", str(script_path)]
+    else:
+        return 127, (
+            "Не найден совместимый эмулятор терминала (x-terminal-emulator "
+            "или gnome-terminal). Установщик не запускался. Установите "
+            "x-terminal-emulator и повторите попытку."
+        )
+    try:
+        result = subprocess.run(command, timeout=timeout, check=False)
+        return result.returncode, (
+            "Официальный установщик завершился. Код возврата: "
+            + str(result.returncode)
+            + ". Если терминал показал запрос пароля, вводите его только "
+              "в самом терминале; символы пароля могут не отображаться."
+        )
+    except subprocess.TimeoutExpired:
+        return 124, "Время ожидания установки истекло; проверьте состояние CLI."
+    except OSError as exc:
+        return 1, f"Не удалось открыть терминал для установщика: {exc}"
+
+
+def install_official() -> tuple[int, str]:
+    """Fetch the official release installer over HTTPS and run it in a TTY.
+
+    The official script requests elevation itself when required. The GUI never
+    handles credentials; the terminal is visible for interactive sudo prompts.
     """
     try:
         request = urllib.request.Request(INSTALLER_URL, headers={"User-Agent": "ADGuard-VPN-Desktop"})
@@ -65,9 +105,7 @@ def install_official() -> tuple[int, str]:
             stream.write(script)
             path = Path(stream.name)
         try:
-            result = subprocess.run(["sh", str(path), "-v"], text=True, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, timeout=900, check=False)
-            return result.returncode, result.stdout.strip()
+            return _run_installer_in_terminal(path)
         finally:
             path.unlink(missing_ok=True)
     except Exception as exc:
