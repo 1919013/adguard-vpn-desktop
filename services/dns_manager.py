@@ -78,10 +78,12 @@ class DNSManager:
     def vpn_status(self) -> tuple[bool, str]:
         code, output = self._run(["adguardvpn-cli", "status"])
         clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
-        connected = (
-            code == 0 and "Connected to " in clean
-            and "running on tun0" in clean
+        # The CLI may assign tun0, tun1, etc.; do not assume a fixed
+        # interface number when confirming TUN mode.
+        running_tun = re.search(
+            r"VPN is running on ([A-Za-z0-9_.:-]+)", clean, re.IGNORECASE
         )
+        connected = code == 0 and "Connected to " in clean and bool(running_tun)
         return connected, clean
 
     def active_profiles(self) -> dict[str, str]:
