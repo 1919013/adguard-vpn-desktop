@@ -212,7 +212,7 @@ def _gui_root() -> Path:
 
 
 def download_install_gui() -> tuple[int, str]:
-    """Clone the public main branch into the user's XDG data directory."""
+    """Clone the current 0.2.0 candidate branch into the user's XDG data directory."""
     if not shutil.which("git"):
         return 127, "Для загрузки ADGuard VPN Desktop необходим git."
     target = _xdg_path("XDG_DATA_HOME", ".local/share") / "adguard-vpn-desktop" / "app"
@@ -222,7 +222,7 @@ def download_install_gui() -> tuple[int, str]:
             return 2, f"Каталог уже существует и не является Git-установкой: {target}"
         return 0, "ADGuard VPN Desktop уже загружен. Используйте «Обновить GUI» для обновления."
     result = subprocess.run(
-        ["git", "clone", "--depth", "1", "https://github.com/1919013/adguard-vpn-desktop.git", str(target)],
+        ["git", "clone", "--depth", "1", "--single-branch", "--branch", "release/0.2.0", "https://github.com/1919013/adguard-vpn-desktop.git", str(target)],
         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300, check=False,
     )
     if result.returncode:
@@ -393,7 +393,7 @@ def build_adguard_info_tab():
             add(row, "Отключить автозапуск", "Удалить созданный ярлык автозапуска", lambda: run_async("Отключение автозапуска", disable_autostart))
             add(row, "Очистить кэш", "Удалить только ~/.cache/adguardvpn-cli", lambda: confirm("Очистить кэш AdGuard VPN CLI", "Будет удалён только XDG-каталог кэша adguardvpn-cli. Настройки и данные авторизации не затрагиваются.", clear_cache))
         elif _ == 3:
-            add(row, "Скачать / установить GUI", "Загрузить репозиторий в ~/.local/share/adguard-vpn-desktop/app и создать ярлык", lambda: confirm("Скачать и установить ADGuard VPN Desktop", "Будет клонирована публичная ветка main репозитория GitHub. Функция предполагает, что нужные системные зависимости GTK уже установлены.", download_install_gui))
+            add(row, "Скачать / установить GUI", "Загрузить репозиторий в ~/.local/share/adguard-vpn-desktop/app и создать ярлык", lambda: confirm("Скачать и установить ADGuard VPN Desktop", "Будет клонирована проверочная ветка release/0.2.0 публичного репозитория GitHub. Функция предполагает, что нужные системные зависимости GTK уже установлены.", download_install_gui))
             add(row, "Автозапуск GUI: включить", "Запускать графическую оболочку при входе в систему", lambda: run_async("Автозапуск GUI", enable_gui_autostart))
             add(row, "Автозапуск GUI: отключить", "Отключить запуск графической оболочки при входе", lambda: run_async("Отключение автозапуска GUI", disable_gui_autostart))
         elif _ == 4:
