@@ -83,7 +83,7 @@ def build_dns_tab(manager: DNSManager | None = None):
         "OpenDNS": ("208.67.222.222", "208.67.220.220"),
         "Quad9": ("9.9.9.9", "149.112.112.112"),
         "Mullvad DNS": ("194.242.2.2", "194.242.2.3"),
-        "Системный DNS — не менять": (),
+        "Восстановить исходный DNS тестовых профилей": (),
         "Свой DNS": None,
     }
     provider = Gtk.ComboBoxText()
@@ -94,7 +94,11 @@ def build_dns_tab(manager: DNSManager | None = None):
     custom_dns = Gtk.Entry()
     custom_dns.set_placeholder_text("Свой DNS: IPv4/IPv6 через запятую")
     root.pack_start(custom_dns, False, False, 0)
-    profile_label = Gtk.Label(label="Применение ограничено разрешёнными тестовыми профилями NetworkManager.")
+    profile_label = Gtk.Label(
+        label=("Изменения затрагивают только два разрешённых НЕАКТИВНЫХ тестовых профиля. "
+               "Восстановление возвращает их DNS из резервной копии; это не означает "
+               "«оставить системный DNS без изменений» и не управляет активным подключением.")
+    )
     profile_label.set_xalign(0)
     profile_label.set_line_wrap(True)
     root.pack_start(profile_label, False, False, 0)
