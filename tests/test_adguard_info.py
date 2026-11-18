@@ -82,6 +82,32 @@ class UserDataSafetyTests(unittest.TestCase):
             self.assertIn("данные не удалены", message)
             self.assertTrue(marker.exists())
 
+    def test_refuses_to_delete_user_data_when_status_does_not_confirm_disconnection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp) / "data"
+            target = data / "adguardvpn-cli"
+            target.mkdir(parents=True)
+            marker = target / "account"
+            marker.write_text("preserve", encoding="utf-8")
+            with patch.dict(os.environ, {"XDG_DATA_HOME": str(data)}), \
+                 patch("modules.adguard_info.run_vpn", return_value=(0, "Status unavailable")):
+                code, message = adguard_info.clear_user_data()
+            self.assertEqual(code, 2)
+            self.assertIn("не подтверждает отключённое состояние", message)
+            self.assertTrue(marker.exists())
+
+    def test_clears_user_data_after_explicit_disconnected_status(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp) / "data"
+            target = data / "adguardvpn-cli"
+            target.mkdir(parents=True)
+            (target / "account").write_text("remove", encoding="utf-8")
+            with patch.dict(os.environ, {"XDG_DATA_HOME": str(data)}), \
+                 patch("modules.adguard_info.run_vpn", return_value=(0, "VPN is disconnected")):
+                code, message = adguard_info.clear_user_data()
+            self.assertEqual(code, 0, message)
+            self.assertFalse(target.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
