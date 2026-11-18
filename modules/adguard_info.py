@@ -161,6 +161,11 @@ def clear_user_data() -> tuple[int, str]:
             "Сначала отключите AdGuard VPN CLI. Удаление пользовательских данных "
             "при активном VPN отменено; файлы не изменены."
         )
+    if not any(term in normalized for term in ("disconnected", "not connected")):
+        return 2, (
+            "Ответ CLI не подтверждает отключённое состояние VPN; "
+            "удаление пользовательских данных отменено, файлы не изменены."
+        )
     targets = [
         _xdg_path("XDG_DATA_HOME", ".local/share") / "adguardvpn-cli",
         _xdg_path("XDG_CONFIG_HOME", ".config") / "adguardvpn-cli",
