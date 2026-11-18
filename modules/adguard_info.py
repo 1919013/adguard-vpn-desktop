@@ -382,7 +382,7 @@ def build_adguard_info_tab():
         root.pack_start(row, False, False, 0)
         if _ == 0:
             add(row, "Проверить установку", "Версия и состояние VPN", lambda: run_async("Состояние AdGuard VPN CLI", lambda: (0, get_status())))
-            add(row, "Установить / переустановить", "Официальный установщик AdGuard VPN CLI", lambda: confirm("Установить AdGuard VPN CLI", "Будет загружен официальный release-скрипт из репозитория AdguardTeam/AdGuardVPNCLI по HTTPS. Скрипт сам запросит необходимые права.", install_official))
+            add(row, "Установить / переустановить", "Официальный установщик AdGuard VPN CLI", lambda: confirm("Установить AdGuard VPN CLI", "Будет загружен официальный release-скрипт из репозитория AdguardTeam/AdGuardVPNCLI по HTTPS и открыт отдельный терминал. Если появится запрос sudo, вводите пароль только в этом окне; символы при вводе обычно не отображаются. Программа не получает и не сохраняет пароль.", install_official))
             add(row, "Проверить обновления", "adguardvpn-cli check-update", lambda: run_async("Проверка обновлений", check_update))
         elif _ == 1:
             add(row, "Обновить VPN CLI", "Официальная команда обновления", lambda: confirm("Обновить AdGuard VPN CLI", "Будет выполнена официальная команда adguardvpn-cli update.", update_vpn))
