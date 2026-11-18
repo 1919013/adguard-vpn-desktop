@@ -147,6 +147,20 @@ def clear_cache() -> tuple[int, str]:
 
 def clear_user_data() -> tuple[int, str]:
     """Delete only standard per-user XDG state/config/cache locations."""
+    status_code, status = run_vpn(["status"], timeout=20)
+    if status_code:
+        return status_code, (
+            "Не удалось проверить состояние VPN; пользовательские данные не удалены.\n"
+            + (status or "Нет ответа AdGuard VPN CLI.")
+        )
+    normalized = status.casefold()
+    if "connected" in normalized and not any(
+        term in normalized for term in ("disconnected", "not connected")
+    ):
+        return 2, (
+            "Сначала отключите AdGuard VPN CLI. Удаление пользовательских данных "
+            "при активном VPN отменено; файлы не изменены."
+        )
     targets = [
         _xdg_path("XDG_DATA_HOME", ".local/share") / "adguardvpn-cli",
         _xdg_path("XDG_CONFIG_HOME", ".config") / "adguardvpn-cli",
