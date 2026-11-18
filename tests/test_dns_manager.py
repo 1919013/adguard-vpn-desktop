@@ -51,6 +51,10 @@ class DNSManagerSafetyTests(unittest.TestCase):
         connected, _ = manager.vpn_status()
         self.assertFalse(connected)
 
+        runner.vpn_output = "Connected to Riga\nVPN is running on tun7"
+        connected, _ = manager.vpn_status()
+        self.assertTrue(connected)
+
         runner.vpn_output = "Disconnected"
         connected, _ = manager.vpn_status()
         self.assertFalse(connected)
