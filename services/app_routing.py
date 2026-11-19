@@ -282,13 +282,25 @@ def _config_value(output: str, names: Sequence[str]) -> str | None:
 
 
 def _require_disconnected() -> tuple[int, str]:
+    """Require an explicit disconnected state; unknown CLI output is not safe."""
     code, status = _run(["adguardvpn-cli", "status"])
     if code:
         return code, status or "Не удалось проверить состояние VPN."
-    normalized = status.casefold()
-    if "connected" in normalized and not any(term in normalized for term in ("disconnected", "not connected")):
-        return 2, "Перед изменением маршрутизации отключите VPN. После настройки подключите его снова."
-    return 0, ""
+
+    normalized = " ".join((status or "").casefold().split())
+    # Check explicit disconnected phrases first. A successful exit code alone
+    # does not prove that the tunnel is down.
+    if re.search(r"\\b(disconnected|not connected)\\b", normalized):
+        return 0, ""
+    if re.search(r"\\bconnected\\b", normalized):
+        return 2, (
+            "Перед изменением маршрутизации отключите VPN. "
+            "После настройки подключите его снова."
+        )
+    return 2, (
+        "AdGuard VPN CLI не подтвердил отключённое состояние. "
+        "Маршрутизация не изменена; проверьте статус VPN и повторите попытку."
+    )
 
 
 def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
