@@ -190,6 +190,32 @@ def _desktop_quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _write_desktop_file(target: Path, content: str, mode: int) -> tuple[int, str]:
+    """Atomically write an app-owned desktop entry without following symlinks."""
+    if target.is_symlink():
+        return 2, f"Файл является символической ссылкой; запись отменена: {target}"
+    if target.exists() and not target.is_file():
+        return 2, f"Путь существует, но не является обычным файлом; запись отменена: {target}"
+    temporary = None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, target)
+        return 0, str(target)
+    except OSError as exc:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        return 1, f"Не удалось безопасно записать {target}: {exc}"
+
+
 def autostart_path() -> Path:
     return _xdg_path("XDG_CONFIG_HOME", ".config") / "autostart" / AUTOSTART_NAME
 
@@ -199,18 +225,15 @@ def enable_autostart() -> tuple[int, str]:
     if not binary:
         return 127, "Не найден adguardvpn-cli."
     target = autostart_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
     content = (
         "[Desktop Entry]\nType=Application\n"
         "Name=AdGuard VPN CLI\nComment=Connect AdGuard VPN when the desktop session starts\n"
         f"Exec={_desktop_quote(binary)} connect --boot\n"
         "Terminal=false\nX-GNOME-Autostart-enabled=true\n"
     )
-    temporary = target.with_suffix(".tmp")
-    temporary.write_text(content, encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    temporary.replace(target)
-    return 0, f"Автозапуск включён для входа в графическую сессию: {target}"
+    code, message = _write_desktop_file(target, content, 0o600)
+    return (code, f"Автозапуск включён для входа в графическую сессию: {message}"
+            if code == 0 else message)
 
 
 def disable_autostart() -> tuple[int, str]:
@@ -266,20 +289,16 @@ def _gui_desktop_content() -> str:
 
 def install_gui_launcher() -> tuple[int, str]:
     target = _xdg_path("XDG_DATA_HOME", ".local/share") / "applications" / "adguard-vpn-desktop.desktop"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_gui_desktop_content(), encoding="utf-8")
-    os.chmod(target, 0o644)
-    return 0, f"Ярлык ADGuard VPN Desktop создан: {target}"
+    code, message = _write_desktop_file(target, _gui_desktop_content(), 0o644)
+    return (code, f"Ярлык ADGuard VPN Desktop создан: {message}"
+            if code == 0 else message)
 
 
 def enable_gui_autostart() -> tuple[int, str]:
     target = _xdg_path("XDG_CONFIG_HOME", ".config") / "autostart" / "adguard-vpn-desktop.desktop"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(".tmp")
-    temporary.write_text(_gui_desktop_content(), encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    temporary.replace(target)
-    return 0, f"Автозапуск графической оболочки включён: {target}"
+    code, message = _write_desktop_file(target, _gui_desktop_content(), 0o600)
+    return (code, f"Автозапуск графической оболочки включён: {message}"
+            if code == 0 else message)
 
 
 def disable_gui_autostart() -> tuple[int, str]:
