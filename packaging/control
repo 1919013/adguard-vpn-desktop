@@ -1,0 +1,11 @@
+Package: adguard-vpn-desktop
+Version: 0.2.0~dev
+Section: net
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.11), python3-gi, gir1.2-gtk-3.0, network-manager, iproute2, nftables, systemd, policykit-1
+Maintainer: ADGuard VPN Desktop contributors
+Description: Unofficial GTK desktop wrapper for AdGuard VPN CLI
+ Independent graphical interface for managing AdGuard VPN CLI on Linux.
+ This package does not include AdGuard VPN CLI and is not an official
+ AdGuard product.
