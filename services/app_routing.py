@@ -290,9 +290,9 @@ def _require_disconnected() -> tuple[int, str]:
     normalized = " ".join((status or "").casefold().split())
     # Check explicit disconnected phrases first. A successful exit code alone
     # does not prove that the tunnel is down.
-    if re.search(r"\b(disconnected|not connected)\\b", normalized):
+    if re.search(r"\b(disconnected|not connected)\b", normalized):
         return 0, ""
-    if re.search(r"\bconnected\\b", normalized):
+    if re.search(r"\bconnected\b", normalized):
         return 2, (
             "Перед изменением маршрутизации отключите VPN. "
             "После настройки подключите его снова."
