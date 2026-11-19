@@ -133,15 +133,24 @@ def _remove_generated_files() -> tuple[int, str]:
             for item in directory.iterdir():
                 if item.is_symlink() or not item.is_file():
                     return 2, f"Неожиданный объект в каталоге ярлыков; операция отменена: {item}"
-    for directory in directories:
-        if directory.is_dir():
-            for item in directory.iterdir():
-                item.unlink()
-                removed += 1
+    try:
+        for directory in directories:
+            if directory.is_dir():
+                for item in directory.iterdir():
+                    item.unlink()
+                    removed += 1
+    except OSError as exc:
+        return 2, (
+            f"Удаление прервано после удаления {removed} файлов: {exc}. "
+            "Настройки маршрутизации не меняйте; устраните причину и повторите операцию."
+        )
     update = shutil.which("update-desktop-database")
     if update:
-        subprocess.run([update, str(data / "applications")], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, check=False)
+        try:
+            subprocess.run([update, str(data / "applications")], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, check=False)
+        except OSError:
+            pass
     return 0, f"Обновлено. Удалено старых VPN-ярлыков и скриптов: {removed}."
 
 
@@ -274,13 +283,18 @@ def apply_selection(mode: str, selected_ids, direct_paths=()):
     lines = [description, f"Создано альтернативных ярлыков: {len(created)}.", *created]
     if errors:
         lines.extend(["Ошибки:", *errors])
+    if errors:
+        lines.append(
+            "ВНИМАНИЕ: не все ярлыки созданы. Политика маршрутизации настроена, "
+            "но список приложений неполон. Исправьте ошибки и нажмите «Применить» повторно."
+        )
     lines.extend([
         "Закройте уже запущенные приложения и запускайте их через новые ярлыки.",
         "После настройки переподключите AdGuard VPN, чтобы CLI применил route script.",
         "Flatpak запускается через flatpak run в созданной systemd-scope; маршрутизацию sandbox/DBus нужно проверить на этой системе.",
         "Snap пока не поддерживается. Системный DNS общий для системы, а не изолирован по процессам.",
     ])
-    return (0 if created or not chosen else 1), "\n".join(lines)
+    return (1 if errors else 0), "\n".join(lines)
 
 
 def remove_routing():
