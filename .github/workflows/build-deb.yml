@@ -1,0 +1,34 @@
+name: Build Debian package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: ["release/**"]
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build package
+        run: |
+          chmod +x packaging/build-deb.sh
+          packaging/build-deb.sh 0.2.0~dev
+      - name: Validate Debian package
+        run: |
+          dpkg-deb --info dist/adguard-vpn-desktop_0.2.0~dev_all.deb
+          dpkg-deb --contents dist/adguard-vpn-desktop_0.2.0~dev_all.deb
+          mkdir -p /tmp/pkg-check
+          dpkg-deb --extract dist/adguard-vpn-desktop_0.2.0~dev_all.deb /tmp/pkg-check
+          test -x /tmp/pkg-check/usr/bin/adguard-vpn-desktop
+          test -f /tmp/pkg-check/usr/lib/adguard-vpn-desktop/main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adguard-vpn-desktop-deb
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 30
