@@ -30,7 +30,7 @@ a{{color:#075db5}}.disclaimer{{border-left:4px solid #c58a16;padding-left:1rem}}
 <body><h1>ADGuard VPN Desktop</h1>
 <p class="disclaimer"><b>Важно:</b> независимая графическая оболочка для официального AdGuard VPN CLI. Не является продуктом AdGuard и не поддерживается AdGuard.</p>
 <nav><h2>Содержание</h2><ul>{links}</ul></nav>{body}
-<footer><p><a href="https://github.com/1919013/adguard-vpn-desktop">GitHub — репозиторий проекта</a> · Идея: Karpushin Viktor · <a href="https://t.me/Karpuschin">Telegram</a>.</p><p>ИИ-инструмент: OpenAI ChatGPT, GPT-6. Параметры CLI сверяйте с официальной документацией AdGuard.</p></footer>
+<footer><p><a href="https://github.com/1919013/adguard-vpn-desktop">GitHub — репозиторий проекта</a> · Идея: Karpushin Viktor · <a href="https://t.me/Karpuschin">Telegram</a>.</p><p>Лицензия: <a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU GPL версии 3 или новее</a>; копия лицензии включена в репозиторий. Программа распространяется без каких-либо гарантий в пределах, допускаемых законом.</p><p>ИИ-инструмент: OpenAI ChatGPT, GPT-6. Параметры CLI сверяйте с официальной документацией AdGuard.</p></footer>
 </body></html>"""
 
 
