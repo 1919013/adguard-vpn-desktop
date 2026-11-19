@@ -372,6 +372,8 @@ def build_applications_tab():
     root.pack_start(path_row, False, False, 0)
     add_path = Gtk.Button(label="Добавить путь")
     path_row.pack_start(add_path, False, False, 0)
+    clear_paths_button = Gtk.Button(label="Очистить пути")
+    path_row.pack_start(clear_paths_button, False, False, 0)
     paths_label = Gtk.Label(label="Дополнительные пути: " + (", ".join(direct_paths) if direct_paths else "нет"), xalign=0)
     paths_label.set_line_wrap(True)
     path_row.pack_start(paths_label, True, True, 0)
@@ -416,7 +418,7 @@ def build_applications_tab():
         row.pack_start(button, False, False, 0)
 
     def set_busy(value):
-        for button in (all_btn, none_btn, apply_btn, disable_btn, add_path, mode, search):
+        for button in (all_btn, none_btn, apply_btn, disable_btn, add_path, clear_paths_button, mode, search):
             button.set_sensitive(not value)
 
     def finish(result):
@@ -459,7 +461,19 @@ def build_applications_tab():
     disable_btn.connect("clicked", disable)
 
     all_btn.connect("clicked", lambda *_: [widget.set_active(True) for widget in checks.values() if widget.get_sensitive()])
-    none_btn.connect("clicked", lambda *_: [widget.set_active(False) for widget in checks.values()])
+
+    def clear_all(*_):
+        for widget in checks.values():
+            widget.set_active(False)
+        direct_paths.clear()
+        paths_label.set_text("Дополнительные пути: нет")
+
+    def clear_direct_paths(*_):
+        direct_paths.clear()
+        paths_label.set_text("Дополнительные пути: нет")
+
+    none_btn.connect("clicked", clear_all)
+    clear_paths_button.connect("clicked", clear_direct_paths)
     ok, problems = app_routing.check_capabilities()
     status.set_text(
         f"Найдено приложений: {len(apps)}; поддерживается: {sum(a['supported'] for a in apps)}. "
