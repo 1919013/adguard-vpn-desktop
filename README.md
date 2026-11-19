@@ -96,4 +96,4 @@ cd ~/.local/share/adguard-vpn-desktop/app && git pull --ff-only
 
 ## License
 
-No license has been selected yet. Until a license is added, the repository does not grant permission to redistribute or modify the project.
+This project is licensed under the **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`). See the complete terms in [`LICENSE`](LICENSE). Unless a file states otherwise, project contributions are offered under the same license.
