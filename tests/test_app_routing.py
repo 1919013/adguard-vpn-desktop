@@ -11,7 +11,7 @@ from services.app_routing import (
     APP_SLICE, DIRECT_MARK, FWMARK, NFT_TABLE, ROUTE_TABLE,
     cgroup_level_for_component, cgroup_level_for_slice,
     nft_ruleset, route_script, scope_command, user_manager_component,
-    RoutingError, configure,
+    RoutingError, configure, _require_disconnected,
 )
 
 
@@ -118,6 +118,39 @@ class AppRoutingPlannerTests(unittest.TestCase):
             self.assertEqual(hook.read_text(encoding="utf-8"), "#!/bin/sh\necho original\n")
             self.assertEqual(stat.S_IMODE(hook.stat().st_mode), 0o640)
             self.assertFalse(state.exists())
+
+    def test_routing_requires_explicit_disconnected_status(self):
+        for output in ("VPN status: disconnected", "Not connected", "Disconnected"):
+            with self.subTest(output=output), patch(
+                "services.app_routing._run", return_value=(0, output)
+            ):
+                self.assertEqual(_require_disconnected(), (0, ""))
+
+    def test_routing_refuses_connected_status(self):
+        with patch(
+            "services.app_routing._run",
+            return_value=(0, "Connected to RIGA in TUN mode, running on tun0"),
+        ):
+            code, message = _require_disconnected()
+        self.assertEqual(code, 2)
+        self.assertIn("отключите VPN", message)
+
+    def test_routing_refuses_ambiguous_successful_status(self):
+        for output in ("", "VPN status: active", "Status unavailable"):
+            with self.subTest(output=output), patch(
+                "services.app_routing._run", return_value=(0, output)
+            ):
+                code, message = _require_disconnected()
+                self.assertEqual(code, 2)
+                self.assertIn("не подтвердил отключённое состояние", message)
+
+    def test_routing_refuses_when_status_command_fails(self):
+        with patch(
+            "services.app_routing._run", return_value=(1, "CLI error")
+        ):
+            code, message = _require_disconnected()
+        self.assertEqual(code, 1)
+        self.assertEqual(message, "CLI error")
 
     def test_failed_cli_configuration_removes_newly_created_route_script(self):
         with tempfile.TemporaryDirectory() as temp:
