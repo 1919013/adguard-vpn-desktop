@@ -47,6 +47,30 @@ class InstallerTerminalTests(unittest.TestCase):
         self.assertIn("истекло", message)
 
 
+class DesktopEntrySafetyTests(unittest.TestCase):
+    def test_refuses_to_write_through_symlink(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            protected = root / "protected.txt"
+            protected.write_text("keep", encoding="utf-8")
+            target = root / "applications" / "app.desktop"
+            target.parent.mkdir()
+            target.symlink_to(protected)
+            code, message = adguard_info._write_desktop_file(target, "replace", 0o644)
+            self.assertEqual(code, 2)
+            self.assertIn("символической ссылкой", message)
+            self.assertEqual(protected.read_text(encoding="utf-8"), "keep")
+            self.assertTrue(target.is_symlink())
+
+    def test_writes_desktop_entry_atomically_with_requested_permissions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "autostart" / "app.desktop"
+            code, message = adguard_info._write_desktop_file(target, "[Desktop Entry]\\n", 0o600)
+            self.assertEqual(code, 0, message)
+            self.assertEqual(target.read_text(encoding="utf-8"), "[Desktop Entry]\\n")
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+
 class UserDataSafetyTests(unittest.TestCase):
     def test_refuses_to_delete_user_data_while_vpn_is_connected(self):
         with tempfile.TemporaryDirectory() as temp:
