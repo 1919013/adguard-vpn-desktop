@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from modules.applications import _exec_tokens, _resolve, discover_apps, remove_routing
+from modules.applications import _exec_tokens, _resolve, discover_apps, remove_routing, _remove_generated_files
 
 
 class ApplicationDiscoveryTests(unittest.TestCase):
@@ -45,6 +45,38 @@ class ApplicationDiscoveryTests(unittest.TestCase):
             self.assertEqual(len(found), 1)
             self.assertEqual(found[0]["name"], "Telegram Test")
             self.assertTrue(found[0]["supported"])
+
+
+class GeneratedLauncherCleanupTests(unittest.TestCase):
+    def test_reports_partial_cleanup_failure_without_raising(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first_dir = root / "applications" / "adguard-vpn-routed"
+            second_dir = root / "adguard-vpn-desktop" / "bin"
+            first_dir.mkdir(parents=True)
+            second_dir.mkdir(parents=True)
+            first = first_dir / "one.desktop"
+            second = second_dir / "two.sh"
+            first.write_text("one", encoding="utf-8")
+            second.write_text("two", encoding="utf-8")
+            original_unlink = Path.unlink
+            calls = {"count": 0}
+
+            def fail_second_unlink(path, *args, **kwargs):
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    raise PermissionError("simulated permission error")
+                return original_unlink(path, *args, **kwargs)
+
+            with patch.dict(os.environ, {"XDG_DATA_HOME": temp}), \
+                 patch("modules.applications.shutil.which", return_value=None), \
+                 patch.object(Path, "unlink", fail_second_unlink):
+                code, message = _remove_generated_files()
+
+            self.assertEqual(code, 2)
+            self.assertIn("после удаления 1 файлов", message)
+            self.assertFalse(first.exists())
+            self.assertTrue(second.exists())
 
 
 class RoutingRemovalTests(unittest.TestCase):
