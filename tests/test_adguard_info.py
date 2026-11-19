@@ -71,6 +71,15 @@ class DesktopEntrySafetyTests(unittest.TestCase):
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
 
+    def test_gui_desktop_entry_uses_real_line_breaks(self):
+        entry = adguard_info._gui_desktop_content()
+        self.assertIn("[Desktop Entry]\n", entry)
+        self.assertNotIn("\\n", entry)
+        self.assertIn("Type=Application", entry.splitlines())
+        self.assertTrue(any(line.startswith("Exec=") for line in entry.splitlines()))
+        self.assertIn("Terminal=false", entry.splitlines())
+
+
 class UserDataSafetyTests(unittest.TestCase):
     def test_refuses_to_delete_user_data_while_vpn_is_connected(self):
         with tempfile.TemporaryDirectory() as temp:
