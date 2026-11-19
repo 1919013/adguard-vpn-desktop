@@ -60,6 +60,26 @@ GitHub Actions runs these checks on pushes and pull requests. Passing CI does no
 - `i18n/` — planned translations.
 - `tests/` — headless regression tests.
 
+## Test installation from a Debian package
+
+The `release/0.2.0` branch has a GitHub Actions workflow that builds a test `.deb` package. It contains the GUI wrapper but **does not install AdGuard VPN CLI**. Install the CLI separately from the “Инфо ADGuard” tab.
+
+This is a test candidate, not a stable release. Download the artifact from the **Artifacts** section of a successful [Build Debian package workflow run](https://github.com/1919013/adguard-vpn-desktop/actions/workflows/build-deb.yml?query=branch%3Arelease%2F0.2.0). Extract the artifact ZIP and install:
+
+```sh
+sudo apt install ./adguard-vpn-desktop_0.2.0~dev_all.deb
+```
+
+Launch from the applications menu or run `adguard-vpn-desktop`.
+
+Remove the GUI wrapper with:
+
+```sh
+sudo apt remove adguard-vpn-desktop
+```
+
+Removing the GUI package does not remove AdGuard VPN CLI or its user settings. The package should be tested on Debian 13 with GTK 3 and NetworkManager.
+
 ## Updating the current Git checkout
 
 For a clean clone with its upstream branch configured:
