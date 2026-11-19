@@ -272,7 +272,7 @@ def download_install_gui() -> tuple[int, str]:
     if not (target / "main.py").is_file():
         return 2, "Репозиторий загружен, но main.py не найден. Установка ярлыка отменена."
     launcher_code, launcher_message = install_gui_launcher()
-    return launcher_code, result.stdout.strip() + "\\n" + launcher_message
+    return launcher_code, result.stdout.strip() + "\n" + launcher_message
 
 
 def _gui_desktop_content() -> str:
@@ -280,10 +280,10 @@ def _gui_desktop_content() -> str:
     root = _gui_root()
     main = root / "main.py"
     return (
-        "[Desktop Entry]\\nType=Application\\n"
-        "Name=ADGuard VPN Desktop\\nComment=Unofficial graphical wrapper for AdGuard VPN CLI\\n"
-        f"Exec={_desktop_quote(sys.executable)} {_desktop_quote(str(main))}\\n"
-        "Terminal=false\\nCategories=Network;\\nStartupNotify=true\\n"
+        "[Desktop Entry]\nType=Application\n"
+        "Name=ADGuard VPN Desktop\nComment=Unofficial graphical wrapper for AdGuard VPN CLI\n"
+        f"Exec={_desktop_quote(sys.executable)} {_desktop_quote(str(main))}\n"
+        "Terminal=false\nCategories=Network;\nStartupNotify=true\n"
     )
 
 
