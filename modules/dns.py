@@ -44,6 +44,18 @@ class DNSController:
     def restore(self) -> None:
         self.manager.restore()
 
+    def discover_profiles(self):
+        return self.manager.discover_profiles()
+
+    def backup_selected(self, profile_uuid: str):
+        return self.manager.backup_selected_profile(profile_uuid)
+
+    def apply_selected(self, profile_uuid: str, dns_servers):
+        self.manager.apply_selected_profile_dns(profile_uuid, dns_servers)
+
+    def restore_selected(self, profile_uuid: str):
+        self.manager.restore_selected_profile(profile_uuid)
+
 
 def build_dns_tab(manager: DNSManager | None = None):
     """Build and return a GTK 3 DNS tab widget.
