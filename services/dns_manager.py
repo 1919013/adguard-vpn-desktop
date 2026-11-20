@@ -237,7 +237,7 @@ class DNSManager:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 json.dump(data, stream, ensure_ascii=False, indent=2)
-                stream.write("\\n")
+                stream.write("\n")
                 stream.flush()
                 os.fsync(stream.fileno())
             os.link(temporary, destination)
@@ -342,6 +342,10 @@ class DNSManager:
             desired = dict(snapshot)
             desired["ipv4.dns"] = " ".join(servers)
             desired["ipv4.ignore-auto-dns"] = "yes"
+            # Prevent an automatic IPv6 resolver from bypassing the selected DNS provider.
+            # The exact prior IPv6 values are preserved in the profile backup.
+            desired["ipv6.dns"] = ""
+            desired["ipv6.ignore-auto-dns"] = "yes"
             try:
                 self._write_profile_uuid(item["uuid"], desired)
                 actual = self._read_profile_uuid(item["uuid"], RESTORE_FIELDS)
