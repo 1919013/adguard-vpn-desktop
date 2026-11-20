@@ -107,10 +107,11 @@ def build_dns_tab(manager: DNSManager | None = None):
     custom_dns = Gtk.Entry()
     custom_dns.set_placeholder_text("Свой DNS: IPv4/IPv6 через запятую")
     root.pack_start(custom_dns, False, False, 0)
+    buttons = []
     profile_label = Gtk.Label(
-        label=("Изменения затрагивают только два разрешённых НЕАКТИВНЫХ тестовых профиля. "
-               "Восстановление возвращает их DNS из резервной копии; это не означает "
-               "«оставить системный DNS без изменений» и не управляет активным подключением.")
+        label=("Для обычного Ethernet/Wi-Fi профиля выбери его ниже, создай отдельную копию, "
+               "затем примени DNS. Активные профили не изменяются. Старые кнопки тестового "
+               "режима внизу по-прежнему затрагивают только два тестовых профиля.")
     )
     profile_label.set_xalign(0)
     profile_label.set_line_wrap(True)
@@ -233,8 +234,6 @@ def build_dns_tab(manager: DNSManager | None = None):
     root.pack_start(action_row, False, False, 0)
     action_row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     root.pack_start(action_row2, False, False, 0)
-
-    buttons = []
 
     def set_text(value: str):
         status_view.get_buffer().set_text(value)
