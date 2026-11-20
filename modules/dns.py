@@ -116,6 +116,91 @@ def build_dns_tab(manager: DNSManager | None = None):
     profile_label.set_line_wrap(True)
     root.pack_start(profile_label, False, False, 0)
 
+    selected_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    selected_profile = Gtk.ComboBoxText()
+    selected_profile.set_hexpand(True)
+    refresh_profiles = Gtk.Button(label="Обновить список профилей")
+    selected_row.pack_start(selected_profile, True, True, 0)
+    selected_row.pack_start(refresh_profiles, False, False, 0)
+    root.pack_start(selected_row, False, False, 0)
+
+    def refresh_profile_list():
+        def display(items):
+            selected_profile.remove_all()
+            for item in items:
+                label = item["name"] + " — " + item["type"] + " — " + (item["device"] or "без устройства")
+                selected_profile.append(item["uuid"], label)
+            if items:
+                selected_profile.set_active(0)
+            else:
+                selected_profile.append("", "Ethernet/Wi-Fi профили не найдены")
+                selected_profile.set_active(0)
+            return "Список профилей обновлён."
+        run_async("Обнаружение профилей (только чтение)", controller.discover_profiles, display)
+
+    refresh_profiles.connect("clicked", lambda _button: refresh_profile_list())
+    selected_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    root.pack_start(selected_actions, False, False, 0)
+
+    def selected_uuid():
+        value = selected_profile.get_active_id()
+        if not value:
+            raise ValueError("Сначала обнови список и выбери профиль Ethernet/Wi-Fi.")
+        return value
+
+    def backup_selected():
+        try:
+            uuid = selected_uuid()
+        except Exception as exc:
+            show_error(exc)
+            return
+        run_async("Резервная копия выбранного профиля",
+                  lambda: controller.backup_selected(uuid),
+                  lambda path: "Резервная копия создана: " + str(path))
+
+    def apply_selected():
+        try:
+            uuid = selected_uuid()
+            servers = selected_dns()
+        except Exception as exc:
+            show_error(exc)
+            return
+        confirm(
+            "Изменится только выбранный профиль. Он должен быть отключён; "
+            "резервная копия обязательна, VPN TUN должен быть подтверждён.",
+            lambda: run_async(
+                "Применение DNS к выбранному профилю",
+                lambda: controller.apply_selected(uuid, servers),
+                lambda _result: "DNS применён и проверен."
+            ),
+        )
+
+    def restore_selected():
+        try:
+            uuid = selected_uuid()
+        except Exception as exc:
+            show_error(exc)
+            return
+        confirm(
+            "Восстановить исходные DNS-настройки выбранного профиля? "
+            "Профиль должен быть отключён.",
+            lambda: run_async(
+                "Восстановление выбранного профиля",
+                lambda: controller.restore_selected(uuid),
+                lambda _result: "Исходные DNS-настройки восстановлены и проверены."
+            ),
+        )
+
+    for label, callback in (
+        ("Создать копию выбранного профиля", backup_selected),
+        ("Применить DNS к выбранному", apply_selected),
+        ("Восстановить выбранный профиль", restore_selected),
+    ):
+        button = Gtk.Button(label=label)
+        button.connect("clicked", lambda _button, cb=callback: cb())
+        selected_actions.pack_start(button, False, False, 0)
+        buttons.append(button)
+
     def selected_dns():
         label = provider.get_active_text()
         servers = providers.get(label)
