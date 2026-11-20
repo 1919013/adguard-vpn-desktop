@@ -95,9 +95,12 @@ class DNSManager:
             raise DNSManagerError(f"Cannot read active connections: {output}")
         active = {}
         for line in output.splitlines():
-            if ":" in line:
-                name, device = line.split(":", 1)
-                active[name.replace(r"\:", ":")] = device.replace(r"\:", ":")
+            if not line:
+                continue
+            fields = self._split_nmcli_fields(line, 2)
+            if len(fields) == 2:
+                name, device = fields
+                active[name] = device
         return active
 
     def _read_settings(self, profile: str, fields=BACKUP_FIELDS) -> dict[str, str]:
