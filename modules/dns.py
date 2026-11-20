@@ -1,7 +1,8 @@
 """DNS and protection tab.
 
-The GTK view is deliberately thin: all NetworkManager changes are delegated to
-services.dns_manager.DNSManager, which enforces the test-profile allowlist.
+The GTK view is deliberately thin: NetworkManager inspection and all DNS changes
+are delegated to services.dns_manager.DNSManager. Profile/interface discovery is
+read-only; DNS writes remain restricted to the legacy test-profile allowlist.
 """
 from __future__ import annotations
 
@@ -187,9 +188,38 @@ def build_dns_tab(manager: DNSManager | None = None):
                 lines.append("Активное устройство: " + str(details["active_device"] or "нет"))
                 for key, value in details["settings"].items():
                     lines.append(f"{key}: {value}")
+        lines.extend(["", "ОБНАРУЖЕННЫЕ ПРОФИЛИ NETWORKMANAGER (только чтение)"])
+        discovered = data.get("discovered_profiles", [])
+        if isinstance(discovered, dict) and "error" in discovered:
+            lines.append("Ошибка обнаружения: " + discovered["error"])
+        else:
+            for item in discovered:
+                lines.append(
+                    f'{item["name"]} | {item["type"]} | '
+                    f'{item["device"] or "устройство не назначено"} | '
+                    f'{"активен" if item["active"] else "не активен"}'
+                )
+            if not discovered:
+                lines.append("Обычные Ethernet/Wi-Fi профили не найдены.")
+
+        lines.extend(["", "СЕТЕВЫЕ ИНТЕРФЕЙСЫ (только чтение)"])
+        interfaces = data.get("network_interfaces", [])
+        if isinstance(interfaces, dict) and "error" in interfaces:
+            lines.append("Ошибка чтения интерфейсов: " + interfaces["error"])
+        else:
+            for item in interfaces:
+                lines.append(
+                    f'{item["device"]} | {item["type"]} | {item["state"]} | '
+                    f'{item["connection"] or "без активного профиля"}'
+                )
+            if not interfaces:
+                lines.append("Интерфейсы не обнаружены.")
+
         lines.extend([
             "",
-            "Примечание: чтение конфигурации не является полноценным DNS leak test.",
+            "Важно: обнаружение профилей и интерфейсов ничего не меняет. "
+            "Применение DNS пока ограничено тестовыми профилями.",
+            "Чтение конфигурации не является полноценным DNS leak test.",
         ])
         return "\n".join(lines)
 
