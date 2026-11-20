@@ -78,10 +78,12 @@ class DNSManager:
     def vpn_status(self) -> tuple[bool, str]:
         code, output = self._run(["adguardvpn-cli", "status"])
         clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
-        connected = (
-            code == 0 and "Connected to " in clean
-            and "running on tun0" in clean
+        # The CLI may assign tun0, tun1, etc.; do not assume a fixed
+        # interface number when confirming TUN mode.
+        running_tun = re.search(
+            r"(?:VPN is )?running on ([A-Za-z0-9_.:-]+)", clean, re.IGNORECASE
         )
+        connected = code == 0 and "Connected to " in clean and bool(running_tun)
         return connected, clean
 
     def active_profiles(self) -> dict[str, str]:
@@ -93,9 +95,12 @@ class DNSManager:
             raise DNSManagerError(f"Cannot read active connections: {output}")
         active = {}
         for line in output.splitlines():
-            if ":" in line:
-                name, device = line.split(":", 1)
-                active[name.replace(r"\:", ":")] = device.replace(r"\:", ":")
+            if not line:
+                continue
+            fields = self._split_nmcli_fields(line, 2)
+            if len(fields) == 2:
+                name, device = fields
+                active[name] = device
         return active
 
     def _read_settings(self, profile: str, fields=BACKUP_FIELDS) -> dict[str, str]:
@@ -119,6 +124,287 @@ class DNSManager:
             )
         return settings
 
+    @staticmethod
+    def _split_nmcli_fields(line: str, expected: int) -> list[str]:
+        """Split nmcli terse output while respecting escaped separators."""
+        fields = []
+        current = []
+        escaped = False
+        for char in line:
+            if escaped:
+                current.append(char)
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == ":" and len(fields) < expected - 1:
+                fields.append("".join(current))
+                current = []
+            else:
+                current.append(char)
+        if escaped:
+            current.append("\\")
+        fields.append("".join(current))
+        return fields
+
+    def discover_profiles(self) -> list[dict[str, str | bool]]:
+        """Discover ordinary wired/Wi-Fi NetworkManager profiles (read-only)."""
+        code, output = self._run([
+            "nmcli", "--colors", "no", "--terse",
+            "--fields", "NAME,UUID,TYPE,DEVICE",
+            "connection", "show",
+        ])
+        if code:
+            raise DNSManagerError(f"Cannot discover NetworkManager profiles: {output}")
+        active = self.active_profiles()
+        allowed_types = {"802-3-ethernet", "802-11-wireless", "ethernet", "wifi"}
+        discovered = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = self._split_nmcli_fields(line, 4)
+            if len(fields) != 4:
+                continue
+            name, uuid, kind, device = fields
+            if kind not in allowed_types:
+                continue
+            discovered.append({
+                "name": name,
+                "uuid": uuid,
+                "type": kind,
+                "device": device if device and device != "--" else "",
+                "active": name in active,
+            })
+        return discovered
+
+    def network_interfaces(self) -> list[dict[str, str]]:
+        """Return current physical NetworkManager device states without changing them."""
+        code, output = self._run([
+            "nmcli", "--colors", "no", "--terse",
+            "--fields", "DEVICE,TYPE,STATE,CONNECTION",
+            "device", "status",
+        ])
+        if code:
+            raise DNSManagerError(f"Cannot inspect network interfaces: {output}")
+        interfaces = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = self._split_nmcli_fields(line, 4)
+            if len(fields) != 4:
+                continue
+            device, kind, state, connection = fields
+            if kind in {"loopback", "tun", "wireguard", "bridge"}:
+                continue
+            interfaces.append({
+                "device": device,
+                "type": kind,
+                "state": state,
+                "connection": connection if connection != "--" else "",
+            })
+        return interfaces
+
+    def _selected_profile(self, profile_uuid: str) -> dict[str, str]:
+        """Resolve an explicitly selected wired/Wi-Fi profile by UUID."""
+        if not isinstance(profile_uuid, str) or not re.fullmatch(
+            r"[0-9a-fA-F-]{36}", profile_uuid
+        ):
+            raise DNSManagerError("Select a valid NetworkManager profile UUID")
+        profiles = self.discover_profiles()
+        if isinstance(profiles, dict):
+            raise DNSManagerError(profiles.get("error", "Cannot discover profiles"))
+        matches = [item for item in profiles if item["uuid"].lower() == profile_uuid.lower()]
+        if len(matches) != 1:
+            raise DNSManagerError("Selected profile no longer exists or is ambiguous")
+        return matches[0]
+
+    def _selected_backup_path(self, profile_uuid: str) -> Path:
+        # UUID is validated by _selected_profile before this helper is used.
+        return self.state_dir / f"dns-profile-{profile_uuid.lower()}.json"
+
+    def backup_selected_profile(self, profile_uuid: str) -> Path:
+        """Create a non-overwritable, owner-only backup for one selected profile."""
+        item = self._selected_profile(profile_uuid)
+        settings = self._read_profile_uuid(item["uuid"], BACKUP_FIELDS)
+        self._ensure_state_dir()
+        destination = self._selected_backup_path(item["uuid"])
+        temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}")
+        data = {
+            "version": 1, "uuid": item["uuid"], "name": item["name"],
+            "created": datetime.datetime.now().astimezone().isoformat(),
+            "settings": settings,
+        }
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(data, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.link(temporary, destination)
+            os.unlink(temporary)
+            directory_fd = os.open(self.state_dir, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except FileExistsError as exc:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+            raise DNSManagerError(
+                "A backup for this profile already exists; overwrite is forbidden"
+            ) from exc
+        except Exception:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+            raise
+        return destination
+
+    def _read_profile_uuid(self, profile_uuid: str, fields=BACKUP_FIELDS) -> dict[str, str]:
+        command = [
+            "nmcli", "--colors", "no", "--terse", "--fields", ",".join(fields),
+            "connection", "show", "uuid", profile_uuid,
+        ]
+        code, output = self._run(command)
+        if code:
+            raise DNSManagerError(f"Cannot read selected profile: {output}")
+        settings = {}
+        for line in output.splitlines():
+            if ":" in line:
+                key, value = line.split(":", 1)
+                settings[key] = value
+        missing = set(fields) - set(settings)
+        if missing:
+            raise DNSManagerError("Missing profile settings: " + ", ".join(sorted(missing)))
+        return settings
+
+    def _write_profile_uuid(self, profile_uuid: str, settings: dict[str, str]) -> None:
+        command = ["nmcli", "connection", "modify", "uuid", profile_uuid]
+        for field in RESTORE_FIELDS:
+            command.extend([field, settings[field]])
+        code, output = self._run(command)
+        if code:
+            raise DNSManagerError(f"NetworkManager rejected DNS settings: {output}")
+
+    def validate_selected_backup(self, profile_uuid: str) -> dict:
+        item = self._selected_profile(profile_uuid)
+        path = self._selected_backup_path(item["uuid"])
+        try:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "r", encoding="utf-8") as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                    raise DNSManagerError("Backup file type or owner is invalid")
+                if stat.S_IMODE(info.st_mode) != 0o600:
+                    raise DNSManagerError("Backup permissions must be 0600")
+                data = json.load(stream)
+        except DNSManagerError:
+            raise
+        except Exception as exc:
+            raise DNSManagerError(f"Cannot read selected profile backup: {exc}") from exc
+        if (not isinstance(data, dict) or data.get("version") != 1
+                or data.get("uuid", "").lower() != item["uuid"].lower()
+                or not isinstance(data.get("created"), str)):
+            raise DNSManagerError("Backup identity or format does not match selected profile")
+        settings = data.get("settings")
+        if (not isinstance(settings, dict) or set(settings) != set(BACKUP_FIELDS)
+                or not all(isinstance(value, str) for value in settings.values())):
+            raise DNSManagerError("Selected profile backup is incomplete or invalid")
+        return data
+
+    def apply_selected_profile_dns(self, profile_uuid: str, dns_servers) -> None:
+        """Apply DNS to one explicitly selected inactive profile after backup."""
+        import ipaddress
+        item = self._selected_profile(profile_uuid)
+        try:
+            servers = tuple(str(ipaddress.ip_address(value)) for value in dns_servers)
+        except (TypeError, ValueError) as exc:
+            raise DNSManagerError("Invalid DNS server address") from exc
+        if not servers or len(servers) > 6 or len(set(servers)) != len(servers):
+            raise DNSManagerError("Provide between one and six unique DNS addresses")
+        lock_fd = self._locked()
+        try:
+            self.validate_selected_backup(item["uuid"])
+            connected, detail = self.vpn_status()
+            if not connected:
+                raise DNSManagerError(
+                    "VPN is not confirmed in TUN mode; refusing DNS changes. " + detail
+                )
+            active = self.active_profiles()
+            if item["name"] in active:
+                raise DNSManagerError(
+                    "Selected profile is active. Disconnect it before changing its DNS."
+                )
+            snapshot = self._read_profile_uuid(item["uuid"], RESTORE_FIELDS)
+            desired = dict(snapshot)
+            desired["ipv4.dns"] = " ".join(servers)
+            desired["ipv4.ignore-auto-dns"] = "yes"
+            # Prevent an automatic IPv6 resolver from bypassing the selected DNS provider.
+            # The exact prior IPv6 values are preserved in the profile backup.
+            desired["ipv6.dns"] = ""
+            desired["ipv6.ignore-auto-dns"] = "yes"
+            try:
+                self._write_profile_uuid(item["uuid"], desired)
+                actual = self._read_profile_uuid(item["uuid"], RESTORE_FIELDS)
+                for field in RESTORE_FIELDS:
+                    left, right = desired[field], actual[field]
+                    if field == "ipv4.dns":
+                        norm = lambda value: sorted(
+                            x.strip() for x in re.split(r"[,;\\s]+", value) if x.strip()
+                        )
+                        valid = norm(left) == norm(right)
+                    else:
+                        valid = left == right
+                    if not valid:
+                        raise DNSManagerError(
+                            f"Verification failed for {field}: expected {left!r}, got {right!r}"
+                        )
+            except Exception as exc:
+                try:
+                    self._write_profile_uuid(item["uuid"], snapshot)
+                    restored = self._read_profile_uuid(item["uuid"], RESTORE_FIELDS)
+                    if restored != snapshot:
+                        raise DNSManagerError("Rollback verification mismatch")
+                except Exception as rollback_exc:
+                    raise DNSManagerError(
+                        f"DNS update failed: {exc}. CRITICAL: rollback failed: {rollback_exc}"
+                    ) from exc
+                raise DNSManagerError(f"DNS update failed; original settings restored: {exc}") from exc
+        finally:
+            os.close(lock_fd)
+
+    def restore_selected_profile(self, profile_uuid: str) -> None:
+        item = self._selected_profile(profile_uuid)
+        lock_fd = self._locked()
+        try:
+            data = self.validate_selected_backup(item["uuid"])
+            if item["name"] in self.active_profiles():
+                raise DNSManagerError(
+                    "Selected profile is active. Disconnect it before restoring DNS."
+                )
+            snapshot = self._read_profile_uuid(item["uuid"], RESTORE_FIELDS)
+            saved = {field: data["settings"][field] for field in RESTORE_FIELDS}
+            try:
+                self._write_profile_uuid(item["uuid"], saved)
+                restored = self._read_profile_uuid(item["uuid"], RESTORE_FIELDS)
+                if restored != saved:
+                    raise DNSManagerError("Restoration verification mismatch")
+            except Exception as exc:
+                try:
+                    self._write_profile_uuid(item["uuid"], snapshot)
+                    if self._read_profile_uuid(item["uuid"], RESTORE_FIELDS) != snapshot:
+                        raise DNSManagerError("Rollback verification mismatch")
+                except Exception as rollback_exc:
+                    raise DNSManagerError(
+                        f"Restore failed: {exc}. CRITICAL: rollback failed: {rollback_exc}"
+                    ) from exc
+                raise DNSManagerError(f"Restore failed; pre-operation settings restored: {exc}") from exc
+        finally:
+            os.close(lock_fd)
+
     def status(self) -> dict:
         connected, vpn_output = self.vpn_status()
         active = self.active_profiles()
@@ -131,10 +417,20 @@ class DNSManager:
                 }
             except DNSManagerError as exc:
                 profiles[profile] = {"error": str(exc)}
+        try:
+            discovered_profiles = self.discover_profiles()
+        except DNSManagerError as exc:
+            discovered_profiles = {"error": str(exc)}
+        try:
+            interfaces = self.network_interfaces()
+        except DNSManagerError as exc:
+            interfaces = {"error": str(exc)}
         return {
             "vpn_connected_tun": connected,
             "vpn_output": vpn_output,
             "profiles": profiles,
+            "discovered_profiles": discovered_profiles,
+            "network_interfaces": interfaces,
         }
 
     def dry_run(self) -> dict:
@@ -287,6 +583,17 @@ class DNSManager:
             raise DNSManagerError("Rollback incomplete: " + "; ".join(errors))
 
     def apply_adguard_dns(self) -> None:
+        self.apply_dns_servers(ADGUARD_DNS)
+
+    def apply_dns_servers(self, dns_servers) -> None:
+        """Apply validated resolver IPs to explicitly allowlisted test profiles only."""
+        import ipaddress
+        try:
+            servers = tuple(str(ipaddress.ip_address(value)) for value in dns_servers)
+        except (TypeError, ValueError) as exc:
+            raise DNSManagerError("Invalid DNS server address") from exc
+        if not servers or len(servers) > 6 or len(set(servers)) != len(servers):
+            raise DNSManagerError("Provide between one and six unique DNS addresses")
         lock_fd = self._locked()
         try:
             connected, detail = self.vpn_status()
@@ -304,7 +611,7 @@ class DNSManager:
             desired = {}
             for profile, settings in snapshot.items():
                 changed = dict(settings)
-                changed["ipv4.dns"] = " ".join(ADGUARD_DNS)
+                changed["ipv4.dns"] = " ".join(servers)
                 changed["ipv4.ignore-auto-dns"] = "yes"
                 # IPv6 and all other fields are intentionally preserved.
                 desired[profile] = changed

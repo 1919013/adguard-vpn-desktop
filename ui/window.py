@@ -23,6 +23,16 @@ class MainWindow(Gtk.Window):
         heading.set_xalign(0)
         outer.pack_start(heading, False, False, 0)
 
+        disclaimer = Gtk.Label(
+            label=("Независимая графическая оболочка для AdGuard VPN CLI. "
+                   "Не является официальным приложением или продуктом AdGuard."),
+            xalign=0,
+        )
+        disclaimer.set_line_wrap(True)
+        disclaimer.set_selectable(True)
+        disclaimer.get_style_context().add_class("warning")
+        outer.pack_start(disclaimer, False, False, 0)
+
         notebook = Gtk.Notebook()
         notebook.set_scrollable(True)
         outer.pack_start(notebook, True, True, 0)
