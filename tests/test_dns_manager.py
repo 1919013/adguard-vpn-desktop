@@ -206,6 +206,8 @@ class SelectedProfileDNSTests(unittest.TestCase):
         )
         self.assertEqual(manager.settings["ipv4.dns"], "1.1.1.1 1.0.0.1")
         self.assertEqual(manager.settings["ipv4.ignore-auto-dns"], "yes")
+        self.assertEqual(manager.settings["ipv6.dns"], "")
+        self.assertEqual(manager.settings["ipv6.ignore-auto-dns"], "yes")
         self.assertEqual(len(manager.writes), 1)
 
     def test_selected_profile_apply_refuses_active_profile(self):
