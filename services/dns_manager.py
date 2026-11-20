@@ -121,6 +121,85 @@ class DNSManager:
             )
         return settings
 
+    @staticmethod
+    def _split_nmcli_fields(line: str, expected: int) -> list[str]:
+        """Split nmcli terse output while respecting escaped separators."""
+        fields = []
+        current = []
+        escaped = False
+        for char in line:
+            if escaped:
+                current.append(char)
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == ":" and len(fields) < expected - 1:
+                fields.append("".join(current))
+                current = []
+            else:
+                current.append(char)
+        if escaped:
+            current.append("\\")
+        fields.append("".join(current))
+        return fields
+
+    def discover_profiles(self) -> list[dict[str, str | bool]]:
+        """Discover ordinary wired/Wi-Fi NetworkManager profiles (read-only)."""
+        code, output = self._run([
+            "nmcli", "--colors", "no", "--terse",
+            "--fields", "NAME,UUID,TYPE,DEVICE",
+            "connection", "show",
+        ])
+        if code:
+            raise DNSManagerError(f"Cannot discover NetworkManager profiles: {output}")
+        active = self.active_profiles()
+        allowed_types = {"802-3-ethernet", "802-11-wireless", "ethernet", "wifi"}
+        discovered = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = self._split_nmcli_fields(line, 4)
+            if len(fields) != 4:
+                continue
+            name, uuid, kind, device = fields
+            if kind not in allowed_types:
+                continue
+            discovered.append({
+                "name": name,
+                "uuid": uuid,
+                "type": kind,
+                "device": device if device and device != "--" else "",
+                "active": name in active,
+            })
+        return discovered
+
+    def network_interfaces(self) -> list[dict[str, str]]:
+        """Return current physical NetworkManager device states without changing them."""
+        code, output = self._run([
+            "nmcli", "--colors", "no", "--terse",
+            "--fields", "DEVICE,TYPE,STATE,CONNECTION",
+            "device", "status",
+        ])
+        if code:
+            raise DNSManagerError(f"Cannot inspect network interfaces: {output}")
+        interfaces = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = self._split_nmcli_fields(line, 4)
+            if len(fields) != 4:
+                continue
+            device, kind, state, connection = fields
+            if kind in {"loopback", "tun", "wireguard", "bridge"}:
+                continue
+            interfaces.append({
+                "device": device,
+                "type": kind,
+                "state": state,
+                "connection": connection if connection != "--" else "",
+            })
+        return interfaces
+
     def status(self) -> dict:
         connected, vpn_output = self.vpn_status()
         active = self.active_profiles()
@@ -133,10 +212,20 @@ class DNSManager:
                 }
             except DNSManagerError as exc:
                 profiles[profile] = {"error": str(exc)}
+        try:
+            discovered_profiles = self.discover_profiles()
+        except DNSManagerError as exc:
+            discovered_profiles = {"error": str(exc)}
+        try:
+            interfaces = self.network_interfaces()
+        except DNSManagerError as exc:
+            interfaces = {"error": str(exc)}
         return {
             "vpn_connected_tun": connected,
             "vpn_output": vpn_output,
             "profiles": profiles,
+            "discovered_profiles": discovered_profiles,
+            "network_interfaces": interfaces,
         }
 
     def dry_run(self) -> dict:
