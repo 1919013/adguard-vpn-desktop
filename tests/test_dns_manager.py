@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from services.dns_manager import DNSManager, DNSManagerError, TEST_PROFILES
+from services.dns_manager import DNSManager, DNSManagerError, TEST_PROFILES, BACKUP_FIELDS, RESTORE_FIELDS
 
 
 class FakeRunner:
@@ -146,6 +146,82 @@ class DNSManagerSafetyTests(unittest.TestCase):
             command[:3] == ["nmcli", "connection", "modify"]
             for command in runner.commands
         ))
+
+
+class SelectedProfileDNSManager(DNSManager):
+    PROFILE_UUID = "12345678-1234-5678-1234-567812345678"
+
+    def __init__(self, state_dir, *, active=False):
+        super().__init__(state_dir=state_dir, runner=lambda command, timeout=15: (0, ""))
+        self.active = active
+        self.writes = []
+        self.settings = {field: "" for field in BACKUP_FIELDS}
+        self.settings.update({
+            "ipv4.method": "auto",
+            "ipv4.dns": "",
+            "ipv4.dns-search": "",
+            "ipv4.dns-options": "",
+            "ipv4.dns-priority": "0",
+            "ipv4.ignore-auto-dns": "no",
+            "ipv4.route-metric": "-1",
+            "ipv6.method": "auto",
+            "ipv6.dns": "",
+            "ipv6.dns-search": "",
+            "ipv6.dns-options": "",
+            "ipv6.dns-priority": "0",
+            "ipv6.ignore-auto-dns": "no",
+            "ipv6.route-metric": "-1",
+        })
+
+    def discover_profiles(self):
+        return [{
+            "name": "Home Wi-Fi", "uuid": self.PROFILE_UUID,
+            "type": "802-11-wireless", "device": "wlp2s0", "active": self.active,
+        }]
+
+    def vpn_status(self):
+        return True, "Connected to Riga; VPN is running on tun0"
+
+    def active_profiles(self):
+        return {"Home Wi-Fi": "wlp2s0"} if self.active else {}
+
+    def _read_profile_uuid(self, profile_uuid, fields=BACKUP_FIELDS):
+        return {field: self.settings[field] for field in fields}
+
+    def _write_profile_uuid(self, profile_uuid, settings):
+        self.writes.append((profile_uuid, dict(settings)))
+        self.settings.update(settings)
+
+    def validate_selected_backup(self, profile_uuid):
+        return {"settings": dict(self.settings)}
+
+
+class SelectedProfileDNSTests(unittest.TestCase):
+    def manager(self, *, active=False):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        return SelectedProfileDNSManager(Path(temp.name) / "state", active=active)
+
+    def test_selected_profile_apply_requires_backup_and_verifies(self):
+        manager = self.manager()
+        manager.apply_selected_profile_dns(
+            manager.PROFILE_UUID, ("1.1.1.1", "1.0.0.1")
+        )
+        self.assertEqual(manager.settings["ipv4.dns"], "1.1.1.1 1.0.0.1")
+        self.assertEqual(manager.settings["ipv4.ignore-auto-dns"], "yes")
+        self.assertEqual(len(manager.writes), 1)
+
+    def test_selected_profile_apply_refuses_active_profile(self):
+        manager = self.manager(active=True)
+        with self.assertRaisesRegex(DNSManagerError, "profile is active"):
+            manager.apply_selected_profile_dns(manager.PROFILE_UUID, ("1.1.1.1",))
+        self.assertEqual(manager.writes, [])
+
+    def test_selected_profile_rejects_invalid_uuid_before_discovery(self):
+        manager = self.manager()
+        with self.assertRaisesRegex(DNSManagerError, "valid NetworkManager profile UUID"):
+            manager.apply_selected_profile_dns("not-a-uuid", ("1.1.1.1",))
+        self.assertEqual(manager.writes, [])
 
 
 if __name__ == "__main__":
