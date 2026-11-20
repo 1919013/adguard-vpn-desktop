@@ -125,7 +125,7 @@ class DNSManagerSafetyTests(unittest.TestCase):
             "Guest Wi-Fi:uuid-2:802-11-wireless:wlp2s0\n"
             "VPN:uuid-3: tun: tun0"
         )
-        runner.active_output = "Home\\: office:enp3s0"
+        runner.active_output = r"Home\: office:enp3s0"
         runner.device_output = (
             "enp3s0:ethernet:connected:Home\\: office\n"
             "wlp2s0:wifi:disconnected:--\n"
