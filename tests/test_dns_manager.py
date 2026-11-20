@@ -192,10 +192,6 @@ class SelectedProfileDNSManager(DNSManager):
         self.writes.append((profile_uuid, dict(settings)))
         self.settings.update(settings)
 
-    def validate_selected_backup(self, profile_uuid):
-        return {"settings": dict(self.settings)}
-
-
 class SelectedProfileDNSTests(unittest.TestCase):
     def manager(self, *, active=False):
         temp = tempfile.TemporaryDirectory()
@@ -204,6 +200,7 @@ class SelectedProfileDNSTests(unittest.TestCase):
 
     def test_selected_profile_apply_requires_backup_and_verifies(self):
         manager = self.manager()
+        manager.backup_selected_profile(manager.PROFILE_UUID)
         manager.apply_selected_profile_dns(
             manager.PROFILE_UUID, ("1.1.1.1", "1.0.0.1")
         )
@@ -213,6 +210,7 @@ class SelectedProfileDNSTests(unittest.TestCase):
 
     def test_selected_profile_apply_refuses_active_profile(self):
         manager = self.manager(active=True)
+        manager.backup_selected_profile(manager.PROFILE_UUID)
         with self.assertRaisesRegex(DNSManagerError, "profile is active"):
             manager.apply_selected_profile_dns(manager.PROFILE_UUID, ("1.1.1.1",))
         self.assertEqual(manager.writes, [])
