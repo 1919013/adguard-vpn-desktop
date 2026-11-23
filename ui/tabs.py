@@ -1,6 +1,7 @@
 """Notebook tab assembly."""
 from modules.connection import build_connection_tab
 from modules.dns import build_dns_tab
+from modules.interfaces import build_interfaces_tab
 
 
 def build_tabs(notebook):
@@ -23,4 +24,5 @@ def build_tabs(notebook):
         notebook.append_page(page, Gtk.Label(label=title))
 
     notebook.append_page(build_dns_tab(), Gtk.Label(label="DNS и защита"))
+    notebook.append_page(build_interfaces_tab(), Gtk.Label(label="Сетевые интерфейсы"))
     return notebook
