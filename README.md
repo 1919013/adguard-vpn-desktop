@@ -1,21 +1,27 @@
 # ADGuard VPN Desktop
 
-Open-source graphical desktop interface for AdGuard VPN CLI on Linux.
+Open-source GTK desktop interface for **AdGuard VPN CLI** on Linux. This project is a community GUI wrapper; it is not the official AdGuard desktop application and is not affiliated with AdGuard.
 
-> Work in progress. This repository currently contains a scaffold, not a replacement for the installed application.
+## Current implementation status
 
-## Goals
-- Connect to and disconnect from AdGuard VPN CLI.
-- Browse and select VPN locations.
-- Carefully tested per-application routing (split tunneling).
-- DNS management with explicit safeguards, backups and leak checks.
-- Diagnostics, settings and contextual help.
-- Russian and English localization.
+- AdGuard VPN CLI connection, disconnection, status and location selection.
+- Read-only discovery of network interfaces, IP addresses and NetworkManager device state.
+- A status line reports the tunnel interface named by AdGuard VPN CLI (for example, `tun0`).
+- An experimental DNS tab with backup validation and guarded operations limited to explicitly allowlisted test profiles.
+
+## Not yet implemented or verified
+
+- Per-application split tunneling. The Applications tab is still a placeholder; no application traffic is routed by this GUI.
+- Applying selected network interfaces to routing. The Interfaces tab currently discovers and displays devices; its checkboxes are temporary selections only.
+- General-purpose DNS management for arbitrary user NetworkManager profiles.
+- AdGuard product management, desktop-wrapper updates, full settings and browser-based help.
+- End-to-end verification of routing, DNS leaks and IPv6 on supported Debian systems.
 
 ## Architecture
-- `core/`: application logic and orchestration.
+
+- `core/`: CLI integration and application logic.
 - `modules/`: user-facing features.
-- `services/`: DNS, backup and NetworkManager operations.
+- `services/`: operating-system integration.
 - `ui/`: GTK interface.
 - `i18n/`: translations.
 - `docs/`: documentation.
@@ -24,16 +30,15 @@ Open-source graphical desktop interface for AdGuard VPN CLI on Linux.
 The UI must not execute operating-system commands directly. System operations are isolated behind core/service interfaces.
 
 ## Safety
-- Never change active NetworkManager profiles without explicit user consent.
-- DNS changes require a validated backup and tested rollback.
-- Develop DNS behavior on a dedicated test profile first.
+
+- Interface discovery is read-only.
+- DNS changes are restricted to named test profiles; production profiles are not modified.
+- DNS changes require a validated backup and verified rollback.
 - Do not claim split tunneling is ready until routing, DNS and IPv6 are verified.
 - Never commit credentials, private keys or local DNS snapshots.
 
-## Status
-Initial scaffold. Existing working code will be migrated in small, reviewable steps.
-
 ## License
-No license has been selected yet. Until one is added, this repository does not grant permission to redistribute or modify the project.
+
+The project is intended to use **GPL-3.0-or-later**, as agreed for this project. The canonical license text still needs to be added to the repository before release.
 
 See [README.ru.md](README.ru.md) for Russian.
