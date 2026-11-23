@@ -177,3 +177,21 @@ def build_scoped_application_command(
         application.desktop_id,
         systemd_run=systemd_run,
     )
+
+
+
+def custom_application_from_path(executable: str) -> DesktopApplication:
+    """Create a temporary catalog entry for an explicit executable path."""
+    candidate = Path(executable).expanduser()
+    if not candidate.is_absolute() or not candidate.is_file() or not os.access(candidate, os.X_OK):
+        raise SplitTunnelError("Укажи существующий исполняемый файл по абсолютному пути.")
+    normalized = str(candidate.resolve())
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", normalized).strip("-.")
+    return DesktopApplication(
+        desktop_id="custom-" + safe_id[:80],
+        name=candidate.name,
+        exec_argv=(normalized,),
+        source=normalized,
+        dbus_activatable=False,
+        flatpak=False,
+    )
