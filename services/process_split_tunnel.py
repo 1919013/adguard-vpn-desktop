@@ -67,7 +67,7 @@ def _safe_unit_name(app_id: str) -> str:
     value = _UNIT_SAFE.sub("-", app_id.strip()).strip("-.")
     if not value:
         raise SplitTunnelError("Не удалось сформировать безопасное имя systemd scope.")
-    return ("adguard-vpn-" + value.lower())[:55]
+    return ("adguard-vpn-" + value.lower())[:55] + ".scope"
 
 
 def build_scoped_launch_command(
