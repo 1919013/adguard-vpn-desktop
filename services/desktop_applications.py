@@ -95,7 +95,7 @@ def discover_applications(
 ) -> list[DesktopApplication]:
     """Return visible desktop apps, with user entries overriding system ones."""
     env = os.environ if environ is None else environ
-    dirs = tuple(directories) if directories is not None else (*USER_DIRS, *SYSTEM_DIRS)
+    dirs = tuple(directories) if directories is not None else (*SYSTEM_DIRS, *USER_DIRS)
     found: dict[str, DesktopApplication] = {}
     for root in dirs:
         root = Path(root)
