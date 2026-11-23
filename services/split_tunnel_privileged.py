@@ -168,7 +168,7 @@ class SplitTunnelPrivilegedHelper:
             ip_created = True
             state["phase"] = "active"
             self._write_state(state)
-        except HelperError:
+        except Exception as exc:
             if ip_created:
                 _run(ip_delete, runner=self.runner)
             if nft_created:
@@ -177,7 +177,9 @@ class SplitTunnelPrivilegedHelper:
                 self.state_file.unlink()
             except FileNotFoundError:
                 pass
-            raise
+            if isinstance(exc, HelperError):
+                raise
+            raise HelperError(f"Не удалось завершить транзакцию; выполнен откат: {exc}") from exc
         return {"active": True, "scope": scope, "table": table, "mark": hex(mark), "priority": priority}
 
     def remove(self) -> dict:
