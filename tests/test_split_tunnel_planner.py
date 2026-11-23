@@ -35,6 +35,7 @@ class SplitTunnelPlannerTests(unittest.TestCase):
             "/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope",
             routing_mode="SCRIPT",
             dns_policy_ready=True,
+            nft_table_absent=True,
         )
         self.assertTrue(plan.ready)
         self.assertIn("type route hook output priority mangle", plan.nft_batch)
@@ -59,6 +60,7 @@ class SplitTunnelPlannerTests(unittest.TestCase):
             "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope",
             routing_mode="SCRIPT",
             dns_policy_ready=True,
+            nft_table_absent=True,
         )
         self.assertFalse(plan.ready)
         self.assertTrue(any("IPv6" in reason for reason in plan.reasons))
