@@ -112,7 +112,11 @@ def read_process_cgroup(pid: int, proc_root: Path = Path("/proc")) -> str:
 
 
 def cgroup_v2_id(cgroup_path: str, cgroup_root: Path = CGROUP_ROOT) -> int:
-    """Get the kernel cgroup ID (directory inode) for nft 'meta cgroup'."""
+    """Return the cgroup directory inode for diagnostics and test assertions.
+
+    nftables cgroup-v2 matching uses the socket cgroupv2 expression below,
+    not this inode value.
+    """
     relative = Path(cgroup_path.lstrip("/"))
     if ".." in relative.parts:
         raise SplitTunnelError("Недопустимый путь cgroup.")
