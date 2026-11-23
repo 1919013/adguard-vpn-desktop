@@ -1,11 +1,15 @@
 """GTK application catalog for the split-tunneling workflow.
 
-This view is deliberately transparent: it discovers apps and keeps a temporary
-selection, but does not yet claim to route them through the VPN.
+The current view discovers applications and stores a temporary selection.
+It does not yet claim to route their traffic through the VPN.
 """
 from __future__ import annotations
 
-from services.desktop_applications import (\n    custom_application_from_path, discover_applications, filter_applications,\n)
+from services.desktop_applications import (
+    custom_application_from_path,
+    discover_applications,
+    filter_applications,
+)
 
 
 def build_applications_tab():
@@ -19,6 +23,7 @@ def build_applications_tab():
     title.set_markup("<b>Приложения</b>")
     title.set_xalign(0)
     root.pack_start(title, False, False, 0)
+
     note = Gtk.Label(
         label=("Каталог программ Debian и Flatpak. Отметки пока являются предварительным "
                "выбором: раздельная маршрутизация будет включена после завершения проверок "
@@ -27,6 +32,7 @@ def build_applications_tab():
     )
     note.set_line_wrap(True)
     root.pack_start(note, False, False, 0)
+
     search = Gtk.SearchEntry()
     search.set_placeholder_text("Поиск по началу названия: например, tel")
     root.pack_start(search, False, False, 0)
@@ -46,6 +52,7 @@ def build_applications_tab():
     for button in (select_all, clear_button, refresh):
         actions.pack_start(button, False, False, 0)
     root.pack_start(actions, False, False, 0)
+
     scroller = Gtk.ScrolledWindow()
     scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
     scroller.set_vexpand(True)
@@ -53,6 +60,7 @@ def build_applications_tab():
     rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
     rows.set_border_width(5)
     scroller.add(rows)
+
     summary = Gtk.Label(label="Загрузка каталога приложений…", xalign=0)
     root.pack_start(summary, False, False, 0)
     applications = []
@@ -80,7 +88,9 @@ def build_applications_tab():
         if not visible:
             rows.pack_start(Gtk.Label(label="Приложения не найдены.", xalign=0), False, False, 0)
         rows.show_all()
-        summary.set_text(f"Найдено: {len(applications)} · Показано: {len(visible)} · Выбрано: {len(selected)}")
+        summary.set_text(
+            f"Найдено: {len(applications)} · Показано: {len(visible)} · Выбрано: {len(selected)}"
+        )
 
     def load(*_):
         nonlocal applications
@@ -92,6 +102,7 @@ def build_applications_tab():
             summary.set_text("Не удалось прочитать каталог приложений: " + str(exc))
 
     def add_custom_path(*_):
+        nonlocal applications
         try:
             app = custom_application_from_path(custom_path.get_text())
             applications = [item for item in applications if item.desktop_id != app.desktop_id]
@@ -112,7 +123,8 @@ def build_applications_tab():
         render()
 
     search.connect("search-changed", render)
-    add_custom.connect("clicked", add_custom_path)\n    select_all.connect("clicked", choose_all)
+    add_custom.connect("clicked", add_custom_path)
+    select_all.connect("clicked", choose_all)
     clear_button.connect("clicked", clear_selection)
     refresh.connect("clicked", load)
     load()
