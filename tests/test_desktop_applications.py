@@ -54,7 +54,7 @@ class DesktopApplicationTests(unittest.TestCase):
                 "[Desktop Entry]\nType=Application\nHidden=true\n",
                 encoding="utf-8",
             )
-            apps = discover_applications([user, system])
+            apps = discover_applications([system, user])
             self.assertEqual(apps, [])
 
     def test_prefix_filter_is_case_insensitive(self):
