@@ -50,7 +50,7 @@ class PrivilegedHelperTests(unittest.TestCase):
     def test_rolls_back_nft_if_ip_rule_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner = FakeRunner(fail_ip_add=True)
-            helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0)
+            helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0, lambda name: "/usr/sbin/nft")
             with self.assertRaises(HelperError):
                 helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
             self.assertFalse((Path(tmp) / "state.json").exists())
