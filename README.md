@@ -36,7 +36,7 @@ The current DNS manager is a safety test harness restricted to two explicitly al
 
 ## Network interfaces
 
-The interface tab discovers current non-loopback, non-tunnel devices and applies the documented `adguardvpn-cli config set-bound-if-override` setting. It does not edit NetworkManager connection profiles. The CLI setting accepts one interface; clearing the selection restores automatic interface choice.
+The interface tab discovers current non-loopback, non-tunnel devices and applies the documented `adguardvpn-cli config set-bound-if-override` setting. It does not edit NetworkManager connection profiles. The CLI setting accepts one interface; clearing the selection restores automatic interface choice. The tab also displays the configured outbound-interface override. When no override is set, the CLI does not expose which physical device it selected internally, so the UI explicitly reports automatic selection instead of guessing.
 
 ## Development and checks
 
