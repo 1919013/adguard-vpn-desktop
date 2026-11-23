@@ -157,12 +157,14 @@ def route_script(mode: str = "selected", app_level: int = 4,
     if mode not in VALID_MODES:
         raise ValueError("Неизвестный режим раздельного туннелирования.")
     rules = nft_ruleset(mode, app_level, manager_level)
+    nft_bin = _resolve_command("nft") or "nft"
     # Interface-down is handled by the same hook when the interface no longer
     # exists, and by the explicit GUI disconnect path.
     return f'''#!/bin/sh
 set -eu
 TABLE="{ROUTE_TABLE}"
 NFT_TABLE="{NFT_TABLE}"
+NFT_BIN="{nft_bin}"
 IFACE="${{1:-}}"
 cleanup() {{
   ip rule del priority {VPN_RULE_PRIORITY} fwmark {VPN_MARK} lookup "$TABLE" 2>/dev/null || true
@@ -171,7 +173,7 @@ cleanup() {{
   ip -6 rule del priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main 2>/dev/null || true
   ip route flush table "$TABLE" 2>/dev/null || true
   ip -6 route flush table "$TABLE" 2>/dev/null || true
-  nft delete table inet "$NFT_TABLE" 2>/dev/null || true
+  "$NFT_BIN" delete table inet "$NFT_TABLE" 2>/dev/null || true
 }}
 if [ "${{1:-}}" = "--cleanup" ] || [ -z "$IFACE" ] || [ ! -d "/sys/class/net/$IFACE" ]; then
   cleanup
@@ -224,8 +226,8 @@ else
   ip rule del priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main 2>/dev/null || true
   ip -6 rule del priority {DIRECT_RULE_PRIORITY} fwmark {DIRECT_MARK} lookup main 2>/dev/null || true
 fi
-nft delete table inet "$NFT_TABLE" 2>/dev/null || true
-if ! nft -f - <<'NFT_EOF'
+"$NFT_BIN" delete table inet "$NFT_TABLE" 2>/dev/null || true
+if ! "$NFT_BIN" -f - <<'NFT_EOF'
 {rules.rstrip()}
 NFT_EOF
 then
