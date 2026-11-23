@@ -4,11 +4,31 @@ import unittest
 from unittest.mock import patch
 
 from modules.interfaces import (
-    NetworkInterface, _parse_nmcli_device_status, discover_interfaces,
+    NetworkInterface, _parse_nmcli_device_status, describe_bound_interface,
+    discover_interfaces,
 )
 
 
 class NetworkInterfaceTests(unittest.TestCase):
+    def test_bound_interface_reports_explicit_override(self):
+        self.assertEqual(
+            describe_bound_interface(
+                "Current configuration:\\nOutbound interface override: wlp2s0"
+            ),
+            "AdGuard VPN: исходящий интерфейс принудительно задан — wlp2s0.",
+        )
+
+    def test_bound_interface_reports_automatic_mode_without_guessing_device(self):
+        message = describe_bound_interface(
+            "Current configuration:\\nOutbound interface override: not set"
+        )
+        self.assertIn("автоматический выбор", message)
+        self.assertIn("не сообщает фактически выбранное", message)
+
+    def test_bound_interface_unknown_output_is_not_guessed(self):
+        message = describe_bound_interface("Current configuration:\\nMode: tun")
+        self.assertIn("Не удалось определить", message)
+
     def test_nmcli_parser_preserves_escaped_colons(self):
         parsed = _parse_nmcli_device_status(
             r"enp1s0:ethernet:connected:Office\: wired" + "\n"
