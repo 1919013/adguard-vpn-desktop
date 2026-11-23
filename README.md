@@ -17,6 +17,12 @@ Open-source GTK desktop interface for **AdGuard VPN CLI** on Linux. This project
 - AdGuard product management, desktop-wrapper updates, full settings and browser-based help.
 - End-to-end verification of routing, DNS leaks and IPv6 on supported Debian systems.
 
+## Split-tunneling design constraint
+
+The documented AdGuard VPN CLI Linux interface provides TUN/SOCKS modes, tunnel routing modes (`AUTO`, `SCRIPT`, `NONE`) and **domain** exclusions through `site-exclusions`. Its documented exclusions are not a per-process application selector. The custom routing script is a supported extension point for route-level policies, but it does not by itself provide an application picker.
+
+Therefore, this project must not present an application checkbox as working split tunneling until a separate Linux process-aware routing mechanism is implemented and verified. See the [AdGuard VPN for Linux settings documentation](https://adguard-vpn.com/kb/adguard-vpn-for-linux/settings/) and [exclusions documentation](https://adguard-vpn.com/kb/adguard-vpn-for-linux/exclusions/).
+
 ## Architecture
 
 - `core/`: CLI integration and application logic.
