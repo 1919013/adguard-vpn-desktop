@@ -460,7 +460,7 @@ def reconfigure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
     if code:
         return code, status_message
     try:
-        path = cgroup_path if cgroup_path is not None else current_user_cgroup_path()
+        path = routing_cgroup_path(cgroup_path)
         manager_level = cgroup_level_for_component(path, user_manager_component())
         app_level = cgroup_level_for_slice(path)
         script = route_script(mode, app_level, manager_level)
