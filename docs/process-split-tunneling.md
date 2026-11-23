@@ -26,7 +26,9 @@ Official reference: https://adguard-vpn.com/kb/adguard-vpn-for-linux/settings/
 - prerequisite detection for cgroup v2, systemd user manager, nftables, iproute2 and AdGuard VPN CLI;
 - a safe argv wrapper for native and Flatpak launch commands using a transient user scope;
 - validated process cgroup lookup and cgroup-v2 ID discovery;
-- builders for the nftables cgroup mark and policy-routing rule commands.
+- a builder for nftables `socket cgroupv2 level N NAME` matching (not legacy `meta cgroup`), plus a policy-routing rule command.
+
+`services/routing_inspector.py` reads IPv4/IPv6 route tables and policy rules, detects the active TUN interface, and discovers a VPN route-table number from live kernel state without assuming a fixed AdGuard table ID.
 
 These are building blocks only. The module does **not** execute nftables/ip mutations, alter AdGuard CLI settings, edit desktop files, or claim that split tunneling is operational. A privileged helper with transactional apply/rollback, dynamic route-table discovery, DNS policy and reconnect handling is still required.
 
