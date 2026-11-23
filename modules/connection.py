@@ -6,6 +6,7 @@ import threading
 
 from core.vpn import VPNService
 from core.servers import find_locations
+from ui.dialogs import show_message_dialog
 
 
 class ConnectionController:
@@ -64,16 +65,10 @@ def build_connection_tab():
     locations: list[dict] = []
 
     def show_message(title, body):
-        dialog = Gtk.MessageDialog(
-            transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
-            flags=0,
-            message_type=Gtk.MessageType.INFO,
-            buttons=Gtk.ButtonsType.OK,
-            text=title,
+        show_message_dialog(
+            root.get_toplevel(), title,
+            body or "Нет дополнительной информации.",
         )
-        dialog.format_secondary_text((body or "Нет дополнительной информации.")[:7000])
-        dialog.run()
-        dialog.destroy()
 
     def run_async(operation, callback):
         def worker():
