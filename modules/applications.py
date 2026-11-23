@@ -5,7 +5,7 @@ selection, but does not yet claim to route them through the VPN.
 """
 from __future__ import annotations
 
-from services.desktop_applications import discover_applications, filter_applications
+from services.desktop_applications import (\n    custom_application_from_path, discover_applications, filter_applications,\n)
 
 
 def build_applications_tab():
@@ -30,6 +30,15 @@ def build_applications_tab():
     search = Gtk.SearchEntry()
     search.set_placeholder_text("Поиск по началу названия: например, tel")
     root.pack_start(search, False, False, 0)
+
+    custom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    custom_path = Gtk.Entry()
+    custom_path.set_placeholder_text("Полный путь к программе, например /opt/app/bin/app")
+    custom_row.pack_start(custom_path, True, True, 0)
+    add_custom = Gtk.Button(label="Добавить путь")
+    custom_row.pack_start(add_custom, False, False, 0)
+    root.pack_start(custom_row, False, False, 0)
+
     actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     select_all = Gtk.Button(label="Выбрать все")
     clear_button = Gtk.Button(label="Снять все")
@@ -82,6 +91,18 @@ def build_applications_tab():
         except Exception as exc:
             summary.set_text("Не удалось прочитать каталог приложений: " + str(exc))
 
+    def add_custom_path(*_):
+        try:
+            app = custom_application_from_path(custom_path.get_text())
+            applications = [item for item in applications if item.desktop_id != app.desktop_id]
+            applications.append(app)
+            applications.sort(key=lambda item: (item.name.casefold(), item.desktop_id.casefold()))
+            selected.add(app.desktop_id)
+            custom_path.set_text("")
+            render()
+        except Exception as exc:
+            summary.set_text("Не удалось добавить приложение: " + str(exc))
+
     def choose_all(*_):
         selected.update(app.desktop_id for app in filter_applications(applications, search.get_text()))
         render()
@@ -91,7 +112,7 @@ def build_applications_tab():
         render()
 
     search.connect("search-changed", render)
-    select_all.connect("clicked", choose_all)
+    add_custom.connect("clicked", add_custom_path)\n    select_all.connect("clicked", choose_all)
     clear_button.connect("clicked", clear_selection)
     refresh.connect("clicked", load)
     load()
