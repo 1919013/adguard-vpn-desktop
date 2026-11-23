@@ -19,7 +19,7 @@ class SplitTunnelPrimitiveTests(unittest.TestCase):
         self.assertEqual(
             build_scoped_launch_command(["/usr/bin/firefox", "--new-window"], "org.mozilla.firefox"),
             ["systemd-run", "--user", "--scope", "--collect", "--unit",
-             "adguard-vpn-org.mozilla.firefox", "--slice", "app.slice", "--",
+             "adguard-vpn-org.mozilla.firefox.scope", "--slice", "app.slice", "--",
              "/usr/bin/firefox", "--new-window"],
         )
 
