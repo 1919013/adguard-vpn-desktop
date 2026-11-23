@@ -118,6 +118,30 @@ def get_bound_interface() -> tuple[int, str]:
     return _run(["adguardvpn-cli", "config", "show"])
 
 
+def describe_bound_interface(output: str) -> str:
+    """Describe the configured outbound interface without guessing the live route."""
+    import re
+
+    match = re.search(
+        r"^\s*Outbound interface override:\s*(.*?)\s*$",
+        output,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    if not match:
+        return (
+            "Не удалось определить настройку исходящего интерфейса по ответу CLI. "
+            "Фактический маршрут VPN не предполагается."
+        )
+    value = match.group(1).strip()
+    if not value or value.casefold() in {"not set", "none", "default"}:
+        return (
+            "AdGuard VPN: автоматический выбор исходящего интерфейса "
+            "(переопределение не задано). CLI не сообщает фактически выбранное "
+            "физическое устройство."
+        )
+    return f"AdGuard VPN: исходящий интерфейс принудительно задан — {value}."
+
+
 def bind_interface(name: str | None) -> tuple[int, str]:
     """Bind VPN outbound traffic to one detected interface, or clear override."""
     if name is not None:
@@ -160,6 +184,13 @@ def build_interfaces_tab():
     status.set_line_wrap(True)
     root.pack_start(status, False, False, 0)
 
+    bound_status = Gtk.Label(
+        label="Текущая настройка исходящего интерфейса AdGuard VPN: проверка…",
+        xalign=0,
+    )
+    bound_status.set_line_wrap(True)
+    root.pack_start(bound_status, False, False, 0)
+
     list_box = Gtk.ListBox()
     list_box.set_selection_mode(Gtk.SelectionMode.NONE)
     scroller = Gtk.ScrolledWindow()
@@ -182,8 +213,14 @@ def build_interfaces_tab():
                     other.set_active(False)
 
     def finish_discovery(result):
-        code, payload = result
+        code, payload, bound_code, bound_output = result
         set_busy(False)
+        if bound_code:
+            bound_status.set_text(
+                "Не удалось прочитать текущую настройку AdGuard VPN: " + bound_output
+            )
+        else:
+            bound_status.set_text(describe_bound_interface(bound_output))
         for child in list_box.get_children():
             list_box.remove(child)
         selected.clear()
@@ -215,12 +252,20 @@ def build_interfaces_tab():
                 result = (0, discover_interfaces())
             except Exception as exc:
                 result = (1, str(exc))
-            GLib.idle_add(finish_discovery, result)
+            bound_code, bound_output = get_bound_interface()
+            GLib.idle_add(finish_discovery, (*result, bound_code, bound_output))
         threading.Thread(target=worker, daemon=True).start()
 
-    def finish_apply(result, name):
+    def finish_apply(result, name, bound_result):
         set_busy(False)
         code, output = result
+        bound_code, bound_output = bound_result
+        if bound_code:
+            bound_status.set_text(
+                "Не удалось проверить настройку исходящего интерфейса: " + bound_output
+            )
+        else:
+            bound_status.set_text(describe_bound_interface(bound_output))
         status.set_text(
             ("Настройка применена: " + (name or "автоматический выбор интерфейса") + "\n" + output)
             if code == 0 else ("Не удалось применить настройку:\n" + output)
@@ -233,7 +278,8 @@ def build_interfaces_tab():
         status.set_text("Применение настройки AdGuard VPN CLI…")
         def worker():
             result = bind_interface(name)
-            GLib.idle_add(finish_apply, result, name)
+            bound_result = get_bound_interface()
+            GLib.idle_add(finish_apply, result, name, bound_result)
         threading.Thread(target=worker, daemon=True).start()
 
     def clear_selection():
