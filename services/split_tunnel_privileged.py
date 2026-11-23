@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -102,8 +103,12 @@ class SplitTunnelPrivilegedHelper:
         if self._read_state() is not None:
             raise HelperError("Уже существует состояние раздельной маршрутизации; сначала выполните remove.")
         # Refuse to adopt or overwrite any pre-existing nft table.
-        code, output = _run(["nft", "list", "table", "inet", NFT_TABLE], runner=self.runner)
-        if code == 0:
+        if not shutil.which("nft"):
+            raise HelperError("Команда nft не установлена или недоступна.")
+        code, output = _run(["nft", "list", "tables"], runner=self.runner)
+        if code:
+            raise HelperError("Не удалось проверить таблицы nftables: " + (output or "ошибка nft"))
+        if any(line.strip() == f"table inet {NFT_TABLE}" for line in output.splitlines()):
             raise HelperError("Таблица nftables уже существует; helper не будет её изменять.")
         # Refuse an occupied priority or an existing identical fwmark rule.
         code, rules = _run(["ip", "-j", "rule", "show"], runner=self.runner)
@@ -132,7 +137,7 @@ class SplitTunnelPrivilegedHelper:
                     raise HelperError("Выбранная метка конфликтует с существующим ip rule.")
 
         nft_batch = (
-            f"add table inet {NFT_TABLE}\n"
+            f'add table inet {NFT_TABLE} {{ comment "Owned by ADGuard VPN Desktop"; }}\n'
             f"add chain inet {NFT_TABLE} {NFT_CHAIN} "
             "{ type route hook output priority mangle; policy accept; }\n"
             f"add rule inet {NFT_TABLE} {NFT_CHAIN} "
@@ -188,8 +193,12 @@ class SplitTunnelPrivilegedHelper:
         # Delete exact owned rule if present; tolerate absence during recovery.
         _run(ip_delete, runner=self.runner)
         # The table name is exclusively owned because apply refuses preexistence.
-        code, _ = _run(["nft", "list", "table", "inet", NFT_TABLE], runner=self.runner)
+        code, table_text = _run(["nft", "list", "table", "inet", NFT_TABLE], runner=self.runner)
         if code == 0:
+            if 'comment "Owned by ADGuard VPN Desktop"' not in table_text:
+                raise HelperError("Таблица существует, но маркер владения отсутствует; удаление отменено.")
             self._exec(["nft", "delete", "table", "inet", NFT_TABLE])
+        elif "No such file" not in table_text and "does not exist" not in table_text:
+            raise HelperError("Не удалось проверить таблицу nftables перед удалением: " + (table_text or "ошибка nft"))
         self.state_file.unlink(missing_ok=True)
         return {"active": False, "removed": True}
