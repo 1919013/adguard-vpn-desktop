@@ -128,15 +128,23 @@ def cgroup_v2_id(cgroup_path: str, cgroup_root: Path = CGROUP_ROOT) -> int:
         raise SplitTunnelError(f"Не удалось получить ID cgroup: {exc}") from exc
 
 
-def nft_cgroup_mark_rule(cgroup_id: int, mark: int = DEFAULT_MARK) -> list[str]:
-    """Build an nft command that marks packets created by one app cgroup."""
-    if not isinstance(cgroup_id, int) or cgroup_id <= 0:
-        raise SplitTunnelError("Некорректный ID cgroup.")
+def nft_cgroup_mark_rule(cgroup_path: str, mark: int = DEFAULT_MARK) -> list[str]:
+    """Build an nft socket-cgroupv2 rule for a dedicated systemd scope.
+
+    Plain meta cgroup matches legacy net_cls class IDs, not cgroup-v2 IDs.
+    For cgroup v2 nftables provides socket cgroupv2 level N NAME.
+    """
+    parts = [part for part in cgroup_path.split("/") if part]
+    if not parts or ".." in parts or not cgroup_path.startswith("/"):
+        raise SplitTunnelError("Некорректный путь cgroup v2.")
+    scope_name = parts[-1]
+    if not scope_name.endswith(".scope") or not re.fullmatch(r"[A-Za-z0-9_.@:-]+", scope_name):
+        raise SplitTunnelError("Путь не указывает на безопасное имя systemd scope.")
     if not isinstance(mark, int) or not 0 < mark <= 0xFFFFFFFF:
         raise SplitTunnelError("Некорректная метка пакета.")
     return [
         "nft", "add", "rule", "inet", "adguard_vpn_desktop", "app_output",
-        "meta", "cgroup", str(cgroup_id), "meta", "mark", "set", hex(mark),
+        "socket", "cgroupv2", "level", str(len(parts)), scope_name, "meta", "mark", "set", hex(mark),
     ]
 
 
