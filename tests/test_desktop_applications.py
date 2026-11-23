@@ -79,8 +79,8 @@ class DesktopApplicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "chrome.desktop").write_text(
-                "[Desktop Entry]\\nType=Application\\nName=Chrome\\n"
-                "Exec=flatpak run com.google.Chrome --incognito\\n",
+                "[Desktop Entry]\nType=Application\nName=Chrome\n"
+                "Exec=flatpak run com.google.Chrome --incognito\n",
                 encoding="utf-8",
             )
             app = discover_applications([root])[0]
@@ -92,8 +92,8 @@ class DesktopApplicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "dbus.desktop").write_text(
-                "[Desktop Entry]\\nType=Application\\nName=DBus App\\n"
-                "Exec=example-app\\nDBusActivatable=true\\n",
+                "[Desktop Entry]\nType=Application\nName=DBus App\n"
+                "Exec=example-app\nDBusActivatable=true\n",
                 encoding="utf-8",
             )
             app = discover_applications([root])[0]
