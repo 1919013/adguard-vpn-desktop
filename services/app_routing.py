@@ -69,6 +69,47 @@ def current_user_cgroup_path() -> str:
         raise RoutingError(f"Не удалось прочитать cgroup v2: {exc}") from exc
     raise RoutingError("Не обнаружена единая иерархия cgroup v2.")
 
+def routing_cgroup_path(cgroup_path: str | None = None) -> str:
+    """Return a hierarchy rooted at this user's systemd manager.
+
+    Some desktop launchers place the GUI outside the user manager's cgroup
+    subtree. In that case use systemd's authoritative user-manager ControlGroup
+    rather than guessing a UID or weakening the cgroup checks.
+    """
+    path = cgroup_path if cgroup_path is not None else current_user_cgroup_path()
+    manager = user_manager_component()
+    if manager in path.strip("/").split("/"):
+        return path
+    if cgroup_path is not None:
+        return path
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "show", "-p", "ControlGroup", "--value"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RoutingError(
+            f"Компонент cgroup не найден: {manager}; не удалось запросить ControlGroup: {exc}"
+        ) from exc
+    manager_path = result.stdout.strip()
+    if (result.returncode == 0 and manager in manager_path.strip("/").split("/")
+            and Path("/sys/fs/cgroup", manager_path.lstrip("/")).is_dir()):
+        return manager_path
+    raise RoutingError(f"Компонент cgroup не найден: {manager}")
+
+
+def _resolve_command(name: str) -> str | None:
+    """Find commands even when a desktop launcher's PATH omits sbin directories."""
+    found = shutil.which(name)
+    if found:
+        return found
+    if name == "nft":
+        for candidate in ("/usr/sbin/nft", "/sbin/nft"):
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
 
 def nft_ruleset(mode: str, app_level: int, manager_level: int | None = None) -> str:
     if mode not in VALID_MODES:
@@ -246,14 +287,14 @@ def _atomic_write(path: Path, content: str, mode: int) -> None:
 
 def _capability_problems(cgroup_path: str | None = None) -> list[str]:
     missing = [name for name in ("systemd-run", "nft", "ip", "adguardvpn-cli", "pkexec")
-               if not shutil.which(name)]
+               if not _resolve_command(name)]
     problems = []
     if missing:
         problems.append("Не найдены команды: " + ", ".join(missing))
     if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
         problems.append("Требуется cgroup v2.")
     try:
-        path = cgroup_path if cgroup_path is not None else current_user_cgroup_path()
+        path = routing_cgroup_path(cgroup_path)
         cgroup_level_for_component(path, user_manager_component())
         cgroup_level_for_slice(path)
     except RoutingError as exc:
@@ -312,7 +353,7 @@ def configure(mode: str, cgroup_path: str | None = None) -> tuple[int, str]:
         return 2, "; ".join(problems)
 
     try:
-        path = cgroup_path if cgroup_path is not None else current_user_cgroup_path()
+        path = routing_cgroup_path(cgroup_path)
         manager_level = cgroup_level_for_component(path, user_manager_component())
         app_level = cgroup_level_for_slice(path)
         script = route_script(mode, app_level, manager_level)
