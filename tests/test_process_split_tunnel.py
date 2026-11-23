@@ -67,9 +67,10 @@ class SplitTunnelPrimitiveTests(unittest.TestCase):
 
     def test_builds_nft_and_ip_rule_commands(self):
         self.assertEqual(
-            nft_cgroup_mark_rule(1234),
+            nft_cgroup_mark_rule("/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope"),
             ["nft", "add", "rule", "inet", "adguard_vpn_desktop", "app_output",
-             "meta", "cgroup", "1234", "meta", "mark", "set", "0xad61"],
+             "socket", "cgroupv2", "level", "5", "adguard-vpn-firefox.scope",
+             "meta", "mark", "set", "0xad61"],
         )
         self.assertEqual(
             policy_rule_command(),
@@ -78,7 +79,7 @@ class SplitTunnelPrimitiveTests(unittest.TestCase):
 
     def test_rejects_invalid_kernel_values(self):
         with self.assertRaises(SplitTunnelError):
-            nft_cgroup_mark_rule(0)
+            nft_cgroup_mark_rule("/not-a-scope")
         with self.assertRaises(SplitTunnelError):
             policy_rule_command(table=0)
 
