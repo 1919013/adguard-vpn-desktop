@@ -56,10 +56,12 @@ class SplitTunnelPrivilegedHelper:
     """Apply/remove only helper-owned objects, with rollback on partial failure."""
 
     def __init__(self, state_file: Path = STATE_FILE, runner: Callable = subprocess.run,
-                 euid: Callable[[], int] = os.geteuid):
+                 euid: Callable[[], int] = os.geteuid,
+                 which: Callable[[str], str | None] = shutil.which):
         self.state_file = Path(state_file)
         self.runner = runner
         self.euid = euid
+        self.which = which
 
     def _exec(self, argv: list[str], input_text: str | None = None) -> None:
         code, output = _run(argv, input_text=input_text, runner=self.runner)
@@ -103,7 +105,7 @@ class SplitTunnelPrivilegedHelper:
         if self._read_state() is not None:
             raise HelperError("Уже существует состояние раздельной маршрутизации; сначала выполните remove.")
         # Refuse to adopt or overwrite any pre-existing nft table.
-        if not shutil.which("nft"):
+        if not self.which("nft"):
             raise HelperError("Команда nft не установлена или недоступна.")
         code, output = _run(["nft", "list", "tables"], runner=self.runner)
         if code:
