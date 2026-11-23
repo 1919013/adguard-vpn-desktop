@@ -5,7 +5,6 @@ systemctl, or changes AdGuard VPN CLI configuration.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,17 +43,34 @@ def _numeric_table(value: str) -> int | None:
     return number if 1 <= number <= 2**31 - 1 else None
 
 
+def _fwmark_conflicts(rule: dict[str, Any], mark: int) -> bool:
+    raw = rule.get("fwmark")
+    if raw is None:
+        return False
+    try:
+        value_text, _, mask_text = str(raw).partition("/")
+        value = int(value_text, 0)
+        mask = int(mask_text, 0) if mask_text else 0xFFFFFFFF
+    except ValueError:
+        # An unparseable existing mark is a conflict: fail closed.
+        return True
+    return (mark & mask) == (value & mask)
+
+
 def build_split_tunnel_plan(
     snapshot: RoutingSnapshot,
     cgroup_path: str,
     *,
     routing_mode: str,
     dns_policy_ready: bool = False,
+    nft_table_absent: bool = False,
     mark: int = DEFAULT_MARK,
     preferred_priority: int = DEFAULT_RULE_PRIORITY,
 ) -> SplitTunnelPlan:
     """Build a fail-closed plan; readiness requires explicit SCRIPT and DNS."""
-    reasons: list[str] = []
+    reasons: list[str] = list(snapshot.warnings)
+    if not nft_table_absent:
+        reasons.append("Не подтверждено отсутствие таблицы nftables adguard_vpn_desktop; создание может затронуть существующую конфигурацию.")
     if not snapshot.connected or not snapshot.tunnel_interface:
         reasons.append("AdGuard VPN CLI не подтвердил активный TUN-туннель.")
 
@@ -98,11 +114,8 @@ def build_split_tunnel_plan(
     if priority in used_priorities:
         reasons.append("Не удалось найти свободный приоритет ip rule.")
 
-    for rule in snapshot.rules:
-        fwmark = rule.get("fwmark")
-        if fwmark is not None and str(fwmark).lower() in (hex(mark), str(mark)):
-            reasons.append("Метка пакетов уже используется существующим ip rule.")
-            break
+    if any(_fwmark_conflicts(rule, mark) for rule in snapshot.rules):
+        reasons.append("Выбранная метка конфликтует с существующим ip rule или его маской.")
 
     nft_table = "adguard_vpn_desktop"
     nft_chain = "app_output"
