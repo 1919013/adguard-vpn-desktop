@@ -3,8 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from services.process_split_tunnel import SplitTunnelError
+
 from services.desktop_applications import (
-    _exec_argv, discover_applications, filter_applications,
+    _exec_argv, discover_applications, filter_applications, build_scoped_application_command,
 )
 
 
@@ -72,6 +74,31 @@ class DesktopApplicationTests(unittest.TestCase):
             apps = discover_applications([root])
             filtered = filter_applications(apps, "tel")
             self.assertEqual({app.name for app in filtered}, {"Telegram", "Telephony"})
+
+    def test_scoped_command_preserves_flatpak_argv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "chrome.desktop").write_text(
+                "[Desktop Entry]\\nType=Application\\nName=Chrome\\n"
+                "Exec=flatpak run com.google.Chrome --incognito\\n",
+                encoding="utf-8",
+            )
+            app = discover_applications([root])[0]
+            command = build_scoped_application_command(app)
+            self.assertEqual(command[-4:], ["flatpak", "run", "com.google.Chrome", "--incognito"])
+            self.assertIn("--scope", command)
+
+    def test_refuses_dbus_activation_for_scoped_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "dbus.desktop").write_text(
+                "[Desktop Entry]\\nType=Application\\nName=DBus App\\n"
+                "Exec=example-app\\nDBusActivatable=true\\n",
+                encoding="utf-8",
+            )
+            app = discover_applications([root])[0]
+            with self.assertRaises(SplitTunnelError):
+                build_scoped_application_command(app)
 
 
 if __name__ == "__main__":
