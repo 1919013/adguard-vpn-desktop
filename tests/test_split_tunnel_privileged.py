@@ -17,8 +17,10 @@ class FakeRunner:
 
     def __call__(self, argv, **kwargs):
         self.calls.append((list(argv), kwargs.get("input")))
+        if argv[:3] == ["nft", "list", "tables"]:
+            return SimpleNamespace(returncode=0, stdout="")
         if argv[:3] == ["nft", "list", "table"]:
-            return SimpleNamespace(returncode=1, stdout="")
+            return SimpleNamespace(returncode=0, stdout='table inet adguard_vpn_desktop { comment "Owned by ADGuard VPN Desktop"; }')
         if argv[:3] == ["ip", "-j", "rule"]:
             return SimpleNamespace(returncode=0, stdout='[{"priority":0,"table":"local"}]')
         if argv[:3] == ["ip", "rule", "add"] and self.fail_ip_add:
@@ -36,7 +38,7 @@ class PrivilegedHelperTests(unittest.TestCase):
     def test_apply_creates_only_fixed_nft_and_ip_objects(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner = FakeRunner()
-            helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0)
+            helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0, lambda name: "/usr/sbin/nft")
             result = helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
             self.assertTrue(result["active"])
             state = json.loads((Path(tmp) / "state.json").read_text())
@@ -69,7 +71,7 @@ class PrivilegedHelperTests(unittest.TestCase):
                 "priority": 1061, "phase": "active",
             }))
             runner = FakeRunner()
-            helper = SplitTunnelPrivilegedHelper(state_path, runner, lambda: 0)
+            helper = SplitTunnelPrivilegedHelper(state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft")
             result = helper.remove()
             self.assertTrue(result["removed"])
             self.assertFalse(state_path.exists())
