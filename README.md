@@ -11,7 +11,7 @@ Open-source GTK desktop interface for **AdGuard VPN CLI** on Linux. This project
 
 ## Not yet implemented or verified
 
-- Per-application split tunneling. The Applications tab is still a placeholder; no application traffic is routed by this GUI.
+- Per-application split tunneling is not operational yet. A backend foundation now detects cgroup v2/systemd prerequisites, wraps native and Flatpak launch commands in transient user scopes, and builds nftables/policy-routing command plans; it does not apply routes or route application traffic.
 - Applying selected network interfaces to routing. The Interfaces tab currently discovers and displays devices; its checkboxes are temporary selections only.
 - General-purpose DNS management for arbitrary user NetworkManager profiles.
 - AdGuard product management, desktop-wrapper updates, full settings and browser-based help.
