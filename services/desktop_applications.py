@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from services.process_split_tunnel import SplitTunnelError, build_scoped_launch_command
+
 SYSTEM_DIRS = (
     Path("/usr/local/share/applications"),
     Path("/usr/share/applications"),
@@ -152,3 +154,26 @@ def filter_applications(applications: Iterable[DesktopApplication], prefix: str)
         app for app in applications
         if app.name.casefold().startswith(needle) or app.desktop_id.casefold().startswith(needle)
     ]
+
+
+
+def build_scoped_application_command(
+    application: DesktopApplication,
+    *,
+    systemd_run: str = "systemd-run",
+) -> list[str]:
+    """Build a safe scoped argv for an app that supports direct Exec launch.
+
+    D-Bus-activatable applications are refused for now: a desktop/session-bus
+    activation can reuse an already-running process outside the new scope.
+    """
+    if application.dbus_activatable:
+        raise SplitTunnelError(
+            "Приложение использует D-Bus activation. Его нельзя безопасно запускать "
+            "в отдельном scope, пока не реализовано управление активацией."
+        )
+    return build_scoped_launch_command(
+        application.exec_argv,
+        application.desktop_id,
+        systemd_run=systemd_run,
+    )
