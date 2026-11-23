@@ -36,6 +36,12 @@ Official reference: https://adguard-vpn.com/kb/adguard-vpn-for-linux/settings/
 
 This helper is **not yet connected to the GTK interface or installed through a polkit policy/package**. It is not safe to invoke manually as a user-facing feature yet. DNS policy, verification of the actual AdGuard CLI SCRIPT lifecycle, endpoint protection, reconnect cleanup and real Debian/Flatpak tests remain blockers. The feature is therefore still not operational.
 
+## Desktop application catalog
+
+`services/desktop_applications.py` scans standard system and per-user desktop-entry locations, including Flatpak exports. It honours user-level overrides and hidden entries, parses `Exec` into argv without invoking a shell, identifies Flatpak launchers and flags D-Bus-activatable entries. `modules/applications.py` presents the catalog in GTK with case-insensitive prefix filtering and temporary checkboxes. The current UI does not persist selections or launch applications through the routing scope; this is intentionally stated in the interface.
+
+Flatpak applications that use D-Bus activation or single-instance behavior must be fully stopped before a future scoped launch. Otherwise the session bus may activate an already-running process outside the selected cgroup. The catalog flag is informational and does not solve that lifecycle issue.
+
 ## Required verification before enabling changes
 
 - cgroup v2 and delegated user systemd scopes work on supported Debian/Cinnamon sessions;
