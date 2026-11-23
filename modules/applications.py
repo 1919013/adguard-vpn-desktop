@@ -32,9 +32,9 @@ def build_applications_tab():
     root.pack_start(search, False, False, 0)
     actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     select_all = Gtk.Button(label="Выбрать все")
-    clear_all = Gtk.Button(label="Снять все")
+    clear_button = Gtk.Button(label="Снять все")
     refresh = Gtk.Button(label="Обновить список")
-    for button in (select_all, clear_all, refresh):
+    for button in (select_all, clear_button, refresh):
         actions.pack_start(button, False, False, 0)
     root.pack_start(actions, False, False, 0)
     scroller = Gtk.ScrolledWindow()
@@ -86,13 +86,13 @@ def build_applications_tab():
         selected.update(app.desktop_id for app in filter_applications(applications, search.get_text()))
         render()
 
-    def clear_all(*_):
+    def clear_selection(*_):
         selected.clear()
         render()
 
     search.connect("search-changed", render)
     select_all.connect("clicked", choose_all)
-    clear_all.connect("clicked", clear_all)
+    clear_button.connect("clicked", clear_selection)
     refresh.connect("clicked", load)
     load()
     return root
