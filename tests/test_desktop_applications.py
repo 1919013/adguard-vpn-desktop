@@ -100,6 +100,18 @@ class DesktopApplicationTests(unittest.TestCase):
             with self.assertRaises(SplitTunnelError):
                 build_scoped_application_command(app)
 
+    def test_custom_executable_path_requires_executable_file(self):
+        from services.desktop_applications import custom_application_from_path
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / "custom-app"
+            binary.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+            binary.chmod(0o755)
+            app = custom_application_from_path(str(binary))
+            self.assertEqual(app.exec_argv, (str(binary.resolve()),))
+            self.assertTrue(app.desktop_id.startswith("custom-"))
+            with self.assertRaises(SplitTunnelError):
+                custom_application_from_path(str(Path(tmp) / "missing"))
+
 
 if __name__ == "__main__":
     unittest.main()
