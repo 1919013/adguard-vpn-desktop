@@ -32,12 +32,14 @@ Official reference: https://adguard-vpn.com/kb/adguard-vpn-for-linux/settings/
 
 `services/split_tunnel_planner.py` builds a fail-closed plan only when the caller explicitly confirms SCRIPT mode and DNS policy readiness, one unambiguous VPN table exists, and both IPv4/IPv6 default routes are present. It checks mark conflicts, selects a free rule priority, and emits a candidate nftables route-output chain plus reversible `ip rule` add/delete commands. It does not execute the plan.
 
-These are building blocks only. The module does **not** execute nftables/ip mutations, alter AdGuard CLI settings, edit desktop files, or claim that split tunneling is operational. A privileged helper with transactional apply/rollback, dynamic route-table discovery, DNS policy and reconnect handling is still required.
+`services/split_tunnel_privileged.py` now adds a narrow root-side apply/remove implementation. It accepts only a validated scope name, cgroup level, route table, mark and priority; it does not accept arbitrary shell commands or nft snippets. It checks for an existing nftables table and conflicting `ip rule` entries, writes a root-owned state record, creates the nftables table first, adds the policy rule second, and removes the newly-created nftables table if the second step fails. Removal reconstructs the exact policy rule from validated state and requires the nftables ownership comment before deleting the table.
+
+This helper is **not yet connected to the GTK interface or installed through a polkit policy/package**. It is not safe to invoke manually as a user-facing feature yet. DNS policy, verification of the actual AdGuard CLI SCRIPT lifecycle, endpoint protection, reconnect cleanup and real Debian/Flatpak tests remain blockers. The feature is therefore still not operational.
 
 ## Required verification before enabling changes
 
 - cgroup v2 and delegated user systemd scopes work on supported Debian/Cinnamon sessions;
-- nftables `meta cgroup` matches the actual cgroup ID on IPv4 and IPv6 output;
+- nftables `socket cgroupv2 level N NAME` matches the selected systemd scope on IPv4 and IPv6 output;
 - selected native and Flatpak applications route through the VPN (Flatpak single-instance/D-Bus activation must not reuse an already-running unscoped process);
 - unselected applications retain direct routing;
 - DNS and QUIC/UDP follow the same selection;
