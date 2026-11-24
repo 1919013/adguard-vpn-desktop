@@ -197,7 +197,7 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             state_path = Path(tmp) / "state.json"
             state_path.write_text(json.dumps({
-                "owner": "adguard-vpn-desktop", "scope": "test.scope",
+                "owner": "adguard-vpn-desktop", "scope": "app-adguard-vpn.slice",
                 "level": 5, "table": 880, "cgroup_path": "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", "mark": 0xAD61,
                 "priority": 1061, "phase": "active",
             }))
@@ -218,7 +218,7 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             state_path = Path(tmp) / "state.json"
             state_path.write_text(json.dumps({
-                "owner": "adguard-vpn-desktop", "scope": "test.scope",
+                "owner": "adguard-vpn-desktop", "scope": "app-adguard-vpn.slice",
                 "level": 5, "table": 880, "cgroup_path": "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", "mark": 0xAD61,
                 "priority": 1061, "phase": "active",
             }))
@@ -246,7 +246,7 @@ class PrivilegedHelperTests(unittest.TestCase):
             process_file.write_text("123\n")
             state_path = root / "state.json"
             state_path.write_text(json.dumps({
-                "owner": "adguard-vpn-desktop", "scope": "test.scope",
+                "owner": "adguard-vpn-desktop", "scope": "app-adguard-vpn.slice",
                 "level": 5, "table": 880, "cgroup_path": cgroup_path,
                 "mark": 0xAD61, "priority": 1061, "phase": "active",
             }))
@@ -261,7 +261,6 @@ class PrivilegedHelperTests(unittest.TestCase):
             )
             deferred = helper.remove()
             self.assertTrue(deferred["deferred"])
-            self.assertTrue(state_path.exists())
             self.assertTrue(state_path.exists())
             self.assertFalse(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
 
