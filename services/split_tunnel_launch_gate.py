@@ -159,11 +159,11 @@ class SplitTunnelLaunchGate:
 
             def release():
                 nonlocal released
-                stream.write(b"GO\\n")
+                stream.write(b"GO\n")
                 released = True
 
             def abort():
-                stream.write(b"ABORT\\n")
+                stream.write(b"ABORT\n")
 
             # Mark that cleanup is required before attempting the transaction:
             # a privileged helper may fail after a partial kernel change.
