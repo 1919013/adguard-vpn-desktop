@@ -147,8 +147,6 @@ class SplitTunnelPrivilegedHelper:
         )
         ip_add = ["ip", "rule", "add", "priority", str(priority),
                   "fwmark", hex(mark), "lookup", str(table)]
-        ip_delete = ["ip", "rule", "del", "priority", str(priority),
-                     "fwmark", hex(mark), "lookup", str(table)]
         # Record intent first. If the process is interrupted, remove can still
         # clean only this exact table/rule, never unrelated administrator rules.
         state = {
@@ -157,15 +155,11 @@ class SplitTunnelPrivilegedHelper:
             "ip_rule": ip_add, "phase": "intent",
         }
         self._write_state(state)
-        nft_created = False
-        ip_created = False
         try:
             self._exec(["nft", "-f", "-"], nft_batch)
-            nft_created = True
             state["phase"] = "nft-created"
             self._write_state(state)
             self._exec(ip_add)
-            ip_created = True
             state["phase"] = "active"
             self._write_state(state)
         except Exception as exc:
