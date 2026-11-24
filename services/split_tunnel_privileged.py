@@ -194,8 +194,48 @@ class SplitTunnelPrivilegedHelper:
                   state.get("mark"), state.get("priority"))
         ip_delete = ["ip", "rule", "del", "priority", str(state["priority"]),
                      "fwmark", hex(state["mark"]), "lookup", str(state["table"])]
-        # Delete exact owned rule if present; tolerate absence during recovery.
-        _run(ip_delete, runner=self.runner)
+        # Inspect policy rules first. Never discard state while an owned rule
+        # may remain installed: that would make a later cleanup ambiguous.
+        code, rules_text = _run(["ip", "-j", "rule", "show"], runner=self.runner)
+        if code:
+            raise HelperError("Не удалось проверить ip rule перед удалением: " + (rules_text or "ошибка ip"))
+        try:
+            rules = json.loads(rules_text or "[]")
+        except json.JSONDecodeError as exc:
+            raise HelperError("ip rule вернул некорректный JSON при удалении.") from exc
+        if not isinstance(rules, list) or any(not isinstance(item, dict) for item in rules):
+            raise HelperError("Неожиданный формат ip rule при удалении.")
+
+        def is_our_rule(rule: dict) -> bool:
+            try:
+                raw_mark = str(rule.get("fwmark", ""))
+                mark_text, _, mask_text = raw_mark.partition("/")
+                parsed_mark = int(mark_text, 0)
+                parsed_mask = int(mask_text, 0) if mask_text else 0xFFFFFFFF
+                table_value = str(rule.get("table", rule.get("lookup", "")))
+                return (
+                    str(rule.get("priority", "")) == str(state["priority"])
+                    and parsed_mark == state["mark"]
+                    and parsed_mask == 0xFFFFFFFF
+                    and table_value == str(state["table"])
+                )
+            except (TypeError, ValueError):
+                return False
+
+        if any(is_our_rule(rule) for rule in rules):
+            self._exec(ip_delete)
+            code, verify_text = _run(["ip", "-j", "rule", "show"], runner=self.runner)
+            if code:
+                raise HelperError("Не удалось проверить удаление ip rule: " + (verify_text or "ошибка ip"))
+            try:
+                remaining = json.loads(verify_text or "[]")
+            except json.JSONDecodeError as exc:
+                raise HelperError("ip rule вернул некорректный JSON после удаления.") from exc
+            if not isinstance(remaining, list) or any(not isinstance(item, dict) for item in remaining):
+                raise HelperError("Неожиданный формат ip rule после удаления.")
+            if any(is_our_rule(rule) for rule in remaining):
+                raise HelperError("Правило ip rule осталось в системе; состояние сохранено для повторной очистки.")
+
         # The table name is exclusively owned because apply refuses preexistence.
         code, table_text = _run(["nft", "list", "table", "inet", NFT_TABLE], runner=self.runner)
         if code == 0:
