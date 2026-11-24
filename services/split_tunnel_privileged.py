@@ -147,8 +147,6 @@ class SplitTunnelPrivilegedHelper:
         )
         ip_add = ["ip", "rule", "add", "priority", str(priority),
                   "fwmark", hex(mark), "lookup", str(table)]
-        ip_delete = ["ip", "rule", "del", "priority", str(priority),
-                     "fwmark", hex(mark), "lookup", str(table)]
         # Record intent first. If the process is interrupted, remove can still
         # clean only this exact table/rule, never unrelated administrator rules.
         state = {
@@ -157,29 +155,29 @@ class SplitTunnelPrivilegedHelper:
             "ip_rule": ip_add, "phase": "intent",
         }
         self._write_state(state)
-        nft_created = False
-        ip_created = False
         try:
             self._exec(["nft", "-f", "-"], nft_batch)
-            nft_created = True
             state["phase"] = "nft-created"
             self._write_state(state)
             self._exec(ip_add)
-            ip_created = True
             state["phase"] = "active"
             self._write_state(state)
         except Exception as exc:
-            if ip_created:
-                _run(ip_delete, runner=self.runner)
-            if nft_created:
-                _run(["nft", "delete", "table", "inet", NFT_TABLE], runner=self.runner)
+            # A failed command may have changed kernel state before returning
+            # an error (or the process may have been interrupted between
+            # operations). Reconcile against live state through the same
+            # ownership-checked remove path. Never discard the recovery record
+            # unless both the policy rule and nftables table are verified gone.
             try:
-                self.state_file.unlink()
-            except FileNotFoundError:
-                pass
+                self.remove()
+            except Exception as cleanup_exc:
+                raise HelperError(
+                    "Не удалось завершить транзакцию и полностью выполнить откат. "
+                    f"Состояние восстановления сохранено в {self.state_file}: {cleanup_exc}"
+                ) from exc
             if isinstance(exc, HelperError):
                 raise
-            raise HelperError(f"Не удалось завершить транзакцию; выполнен откат: {exc}") from exc
+            raise HelperError(f"Транзакция не выполнена; откат проверен: {exc}") from exc
         return {"active": True, "scope": scope, "table": table, "mark": hex(mark), "priority": priority}
 
     def remove(self) -> dict:
