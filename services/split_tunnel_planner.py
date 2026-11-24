@@ -63,6 +63,26 @@ def _fwmark_conflicts(rule: dict[str, Any], mark: int) -> bool:
     return (mark & mask) == (value & mask)
 
 
+def _is_existing_owned_rule(rule: dict[str, Any], mark: int,
+                             table: int | None, priority: int) -> bool:
+    """Recognize only the exact mark/table/priority tuple owned by this app."""
+    if table is None:
+        return False
+    try:
+        raw = str(rule.get("fwmark", ""))
+        mark_text, _, mask_text = raw.partition("/")
+        value = int(mark_text, 0)
+        mask = int(mask_text, 0) if mask_text else 0xFFFFFFFF
+        rule_table = str(rule.get("table", rule.get("lookup", "")))
+        return (
+            value == mark and mask == 0xFFFFFFFF
+            and rule_table == str(table)
+            and str(rule.get("priority", "")) == str(priority)
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def build_split_tunnel_plan(
     snapshot: RoutingSnapshot,
     cgroup_path: str,
@@ -117,6 +137,7 @@ def build_split_tunnel_plan(
     used_priorities = {
         int(rule["priority"]) for rule in snapshot.rules
         if str(rule.get("priority", "")).isdigit()
+        and not _is_existing_owned_rule(rule, mark, table, preferred_priority)
     }
     priority = preferred_priority
     while priority in used_priorities and priority < 32000:
@@ -124,7 +145,11 @@ def build_split_tunnel_plan(
     if priority in used_priorities:
         reasons.append("Не удалось найти свободный приоритет ip rule.")
 
-    if any(_fwmark_conflicts(rule, mark) for rule in snapshot.rules):
+    if any(
+        _fwmark_conflicts(rule, mark)
+        and not _is_existing_owned_rule(rule, mark, table, preferred_priority)
+        for rule in snapshot.rules
+    ):
         reasons.append("Выбранная метка конфликтует с существующим ip rule или его маской.")
 
     nft_table = "adguard_vpn_desktop"
