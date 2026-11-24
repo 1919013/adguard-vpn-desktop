@@ -11,7 +11,7 @@ Open-source GTK desktop interface for **AdGuard VPN CLI** on Linux. This project
 
 ## Not yet implemented or verified
 
-- The Applications tab now discovers Debian and Flatpak `.desktop` entries, supports case-insensitive prefix search and a temporary selection. It is still a catalog/selection prototype: selections are not persisted and do not change routing.
+- The Applications tab discovers Debian and Flatpak `.desktop` entries, supports case-insensitive prefix search and custom executable paths, and persists selected entries in `~/.config/adguard-vpn-desktop/applications.json` with mode `0600`. This is still only a saved selection: it does not change routing.
 - The split-tunnel backend includes scoped native/Flatpak launch primitives, route inspection, a fail-closed planner and a separate privileged helper with preflight checks and rollback. The helper is not yet connected to the GUI/polkit; DNS policy is not ready, no rules are applied, and no application traffic is routed.
 - Applying selected network interfaces to routing. The Interfaces tab currently discovers and displays devices; its checkboxes are temporary selections only.
 - General-purpose DNS management for arbitrary user NetworkManager profiles.
