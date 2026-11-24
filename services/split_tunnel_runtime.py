@@ -154,22 +154,10 @@ class SplitTunnelRuntime:
                 "DNS-защита не подтверждена; приложение не будет запущено:\n- "
                 + "\n- ".join(dns["reasons"])
             )
-        table_absent = self._nft_table_is_absent()
-        if not table_absent:
-            # Recover only state owned by this helper. If ownership cannot be
-            # proven, leave the table untouched and refuse to launch.
-            try:
-                self.helper.remove()
-            except Exception as exc:
-                raise SplitTunnelRuntimeError(
-                    "Не удалось безопасно очистить оставшиеся правила ADGuard VPN Desktop: " + str(exc)
-                ) from exc
-            table_absent = self._nft_table_is_absent()
-        if not table_absent:
-            raise SplitTunnelRuntimeError(
-                "Нельзя безопасно создать правила: таблица nftables уже существует "
-                "или nft недоступен; существующая таблица не была изменена."
-            )
+        # The privileged helper owns collision detection. It creates the
+        # table once, then verifies and reuses the exact same policy for every
+        # application in the shared parent slice.
+        table_absent = True
 
         self._ensure_independent_watchdog()
 
@@ -182,8 +170,13 @@ class SplitTunnelRuntime:
         try:
             def apply_rules(cgroup_path: str):
                 parts = [part for part in cgroup_path.split("/") if part]
-                if not parts:
-                    raise SplitTunnelRuntimeError("Пустой путь cgroup v2.")
+                if (
+                    not parts or parts[-1] != "app-adguard-vpn.slice"
+                    or len(parts) < 2 or parts[-2] != "app.slice"
+                ):
+                    raise SplitTunnelRuntimeError(
+                        "Процесс не находится в общей app-adguard-vpn.slice."
+                    )
                 plan = build_split_tunnel_plan(
                     snapshot, cgroup_path,
                     routing_mode=config["routing_mode"],
@@ -219,6 +212,8 @@ class SplitTunnelRuntime:
 
             def remove_rules():
                 if policy.get("apply_attempted"):
+                    # The root helper checks the entire shared parent cgroup.
+                    # It defers removal while any other protected app remains.
                     self.helper.remove()
 
             return self.gate.run(
