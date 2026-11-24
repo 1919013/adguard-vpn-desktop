@@ -87,8 +87,21 @@ class SplitTunnelWatchdog:
         """Ask the fixed polkit helper to remove state only after scopes exit."""
         if not shutil.which("pkexec") or not shutil.which("systemctl"):
             return False
-        code, _ = self._run(["pkexec", HELPER, "remove"], timeout=35)
-        return code == 0
+        code, output = self._run(["pkexec", HELPER, "remove"], timeout=35)
+        if code:
+            return False
+        try:
+            result = __import__("json").loads(output)
+        except (TypeError, ValueError):
+            return False
+        # The helper exits successfully even when cleanup is deferred because
+        # descendants still exist in the parent cgroup. Keep retrying until
+        # it confirms removal or confirms that no policy state exists.
+        return (
+            isinstance(result, dict)
+            and result.get("deferred") is not True
+            and (result.get("removed") is True or result.get("active") is False)
+        )
 
     def run_forever(self) -> int:
         expected_tunnel = None
