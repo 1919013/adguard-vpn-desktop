@@ -6,6 +6,7 @@ or changes its TUN interface. Kernel egress guards remain the final backstop.
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -91,7 +92,7 @@ class SplitTunnelWatchdog:
         if code:
             return False
         try:
-            result = __import__("json").loads(output)
+            result = json.loads(output)
         except (TypeError, ValueError):
             return False
         # The helper exits successfully even when cleanup is deferred because
