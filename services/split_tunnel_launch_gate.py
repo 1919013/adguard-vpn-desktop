@@ -77,7 +77,7 @@ class SplitTunnelLaunchGate:
             info = base.lstat()
         except OSError as exc:
             raise LaunchGateError(f"Недоступен XDG_RUNTIME_DIR: {exc}") from exc
-        if not base.is_dir() or base.is_symlink() or info.st_uid != os.getuid():
+        if not base.is_dir() or base.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o077:
             raise LaunchGateError("XDG_RUNTIME_DIR должен быть каталогом текущего пользователя.")
         target = base / "adguard-vpn-desktop"
         target.mkdir(mode=0o700, exist_ok=True)
@@ -95,6 +95,8 @@ class SplitTunnelLaunchGate:
             raise LaunchGateError("Команда приложения пуста или задана строкой.")
         if not all(isinstance(arg, str) and arg for arg in command):
             raise LaunchGateError("Команда приложения содержит пустой аргумент.")
+        if cancel_event is None:
+            raise LaunchGateError("Нельзя запускать приложение без наблюдателя отключения VPN.")
         if not self._lock.acquire(blocking=False):
             raise LaunchGateError("Другой процесс уже использует общий набор правил маршрутизации.")
         unit = _safe_unit_name(app_id)
