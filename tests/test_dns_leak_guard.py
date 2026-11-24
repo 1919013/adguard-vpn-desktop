@@ -12,8 +12,8 @@ class DNSLeakGuardTests(unittest.TestCase):
             root = Path(tmp)
             cli = root / "cli-resolv.conf"
             active = root / "resolv.conf"
-            cli.write_text("nameserver 46.243.231.30\\nnameserver 46.243.231.31\\n")
-            active.write_text("nameserver 46.243.231.30\\nnameserver 46.243.231.31\\n")
+            cli.write_text("nameserver 46.243.231.30\nnameserver 46.243.231.31\n")
+            active.write_text("nameserver 46.243.231.30\nnameserver 46.243.231.31\n")
 
             def runner(argv, timeout=8):
                 return 0, '[{"dst":"46.243.231.30","dev":"tun0"}]' if argv[-1] == "46.243.231.30" else '[{"dst":"46.243.231.31","dev":"tun0"}]'
@@ -28,8 +28,8 @@ class DNSLeakGuardTests(unittest.TestCase):
             root = Path(tmp)
             cli = root / "cli-resolv.conf"
             active = root / "resolv.conf"
-            cli.write_text("nameserver 46.243.231.30\\n")
-            active.write_text("nameserver 192.168.17.3\\n")
+            cli.write_text("nameserver 46.243.231.30\n")
+            active.write_text("nameserver 192.168.17.3\n")
             guard = DNSLeakGuard(
                 runner=lambda argv, timeout=8: (0, '[{"dev":"tun0"}]'),
                 resolv_conf=active, cli_resolv_conf=cli,
@@ -43,8 +43,8 @@ class DNSLeakGuardTests(unittest.TestCase):
             root = Path(tmp)
             cli = root / "cli-resolv.conf"
             active = root / "resolv.conf"
-            cli.write_text("nameserver 46.243.231.30\\n")
-            active.write_text("nameserver 46.243.231.30\\n")
+            cli.write_text("nameserver 46.243.231.30\n")
+            active.write_text("nameserver 46.243.231.30\n")
             guard = DNSLeakGuard(
                 runner=lambda argv, timeout=8: (0, '[{"dev":"enp1s0"}]'),
                 resolv_conf=active, cli_resolv_conf=cli,
@@ -58,8 +58,8 @@ class DNSLeakGuardTests(unittest.TestCase):
             root = Path(tmp)
             cli = root / "cli-resolv.conf"
             active = root / "resolv.conf"
-            cli.write_text("nameserver 46.243.231.30\\n")
-            active.write_text("nameserver 127.0.0.53\\n")
+            cli.write_text("nameserver 46.243.231.30\n")
+            active.write_text("nameserver 127.0.0.53\n")
             guard = DNSLeakGuard(resolv_conf=active, cli_resolv_conf=cli)
             result = guard.inspect("tun0")
             self.assertFalse(result["ready"])
