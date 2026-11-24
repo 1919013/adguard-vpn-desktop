@@ -30,7 +30,7 @@ def read_cli_split_tunnel_config(runner=run_cli) -> dict:
         return match.group(1).upper() if match else None
 
     vpn_mode = capture(r"^\s*(?:VPN\s+)?Mode\s*[:=]\s*(TUN|SOCKS)\b")
-    routing_mode = capture(r"^\s*(?:VPN\s+)?(?:TUN\s+)?Routing\s+Mode\s*[:=]\s*(SCRIPT|AUTO|NONE)\b")
+    routing_mode = capture(r"^\s*(?:VPN\s+)?(?:(?:TUN|tunnel)\s+)?Routing\s+Mode\s*[:=]\s*(SCRIPT|AUTO|NONE)\b")
     dns_match = re.search(
         r"^\s*Change\s+system\s+DNS\s*[:=]\s*(on|off|yes|no|true|false)\b",
         output or "", re.IGNORECASE | re.MULTILINE,
@@ -88,7 +88,7 @@ class SplitTunnelRuntime:
                 continue
             try:
                 raw = (entry / "cmdline").read_bytes()
-                argv = [part.decode("utf-8", "replace") for part in raw.split(b"\\0") if part]
+                argv = [part.decode("utf-8", "replace") for part in raw.split(b"\0") if part]
                 comm = (entry / "comm").read_text(encoding="utf-8").strip()
             except OSError:
                 continue
