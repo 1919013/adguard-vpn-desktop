@@ -6,6 +6,7 @@ It is not wired into the GUI until packaging and polkit policy are reviewed.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -318,3 +319,39 @@ class SplitTunnelPrivilegedHelper:
             raise HelperError("Не удалось проверить таблицу nftables перед удалением: " + (table_text or "ошибка nft"))
         self.state_file.unlink(missing_ok=True)
         return {"active": False, "removed": True}
+
+
+def main(argv=None) -> int:
+    """Command-line entry point used only by the fixed pkexec helper."""
+    parser = argparse.ArgumentParser(prog="adguard-vpn-desktop-helper")
+    sub = parser.add_subparsers(dest="operation", required=True)
+    for operation in ("apply", "verify"):
+        command = sub.add_parser(operation)
+        command.add_argument("--scope", required=True)
+        command.add_argument("--level", required=True, type=int)
+        command.add_argument("--table", required=True, type=int)
+    sub.add_parser("remove")
+    args = parser.parse_args(argv)
+    helper = SplitTunnelPrivilegedHelper()
+    try:
+        if args.operation == "apply":
+            result = helper.apply(
+                scope=args.scope, level=args.level, table=args.table
+            )
+        elif args.operation == "verify":
+            result = {
+                "ready": helper.verify_active(
+                    scope=args.scope, level=args.level, table=args.table
+                )
+            }
+        else:
+            result = helper.remove()
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        return 0
+    except HelperError as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
