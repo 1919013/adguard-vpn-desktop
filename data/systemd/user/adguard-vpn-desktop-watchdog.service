@@ -11,8 +11,9 @@ Restart=always
 RestartSec=1
 PrivateTmp=yes
 ProtectSystem=strict
+ReadWritePaths=-/var/lib/adguard-vpn-desktop /run/lock
 ProtectHome=read-only
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 LockPersonality=yes
 
 [Install]
