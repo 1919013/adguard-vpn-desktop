@@ -11,9 +11,10 @@ from services.split_tunnel_privileged import (
 
 
 class FakeRunner:
-    def __init__(self, fail_ip_add=False, initial_rules=None):
+    def __init__(self, fail_ip_add=False, fail_ip_delete=False, initial_rules=None):
         self.calls = []
         self.fail_ip_add = fail_ip_add
+        self.fail_ip_delete = fail_ip_delete
         self.rules = list(initial_rules or [{"priority": 0, "table": "local"}])
 
     def __call__(self, argv, **kwargs):
@@ -29,6 +30,8 @@ class FakeRunner:
         if argv[:3] == ["ip", "rule", "add"]:
             self.rules.append({"priority": int(argv[4]), "fwmark": argv[6], "table": argv[8]})
             return SimpleNamespace(returncode=0, stdout="")
+        if argv[:3] == ["ip", "rule", "del"] and self.fail_ip_delete:
+            return SimpleNamespace(returncode=2, stdout="simulated delete failure")
         if argv[:3] == ["ip", "rule", "del"]:
             priority, mark, table = argv[4], argv[6], argv[8]
             self.rules = [
@@ -95,6 +98,28 @@ class PrivilegedHelperTests(unittest.TestCase):
             self.assertFalse(state_path.exists())
             self.assertTrue(any(call[0][:3] == ["ip", "rule", "del"] for call in runner.calls))
             self.assertTrue(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
+
+
+    def test_remove_keeps_state_and_nft_table_if_ip_rule_cannot_be_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "state.json"
+            state_path.write_text(json.dumps({
+                "owner": "adguard-vpn-desktop", "scope": "test.scope",
+                "level": 5, "table": 880, "mark": 0xAD61,
+                "priority": 1061, "phase": "active",
+            }))
+            runner = FakeRunner(
+                fail_ip_delete=True,
+                initial_rules=[
+                    {"priority": 0, "table": "local"},
+                    {"priority": 1061, "fwmark": "0xad61", "table": "880"},
+                ],
+            )
+            helper = SplitTunnelPrivilegedHelper(state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft")
+            with self.assertRaises(HelperError):
+                helper.remove()
+            self.assertTrue(state_path.exists())
+            self.assertFalse(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
 
 
 if __name__ == "__main__":
