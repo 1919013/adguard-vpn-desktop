@@ -164,12 +164,12 @@ class SplitTunnelRuntime:
                 scope = parts[-1]
                 level = len(parts)
                 policy.update({
-                    "scope": scope, "level": level,
+                    "scope": scope, "level": level, "cgroup_path": cgroup_path,
                     "table": plan.route_table, "priority": plan.rule_priority,
                 })
                 policy["apply_attempted"] = True
                 self.helper.apply(
-                    scope=scope, level=level, table=plan.route_table,
+                    scope=scope, level=level, table=plan.route_table, cgroup_path=cgroup_path,
                     tunnel=snapshot.tunnel_interface,
                     dns_servers=tuple(dns["servers"]),
                     priority=plan.rule_priority,
@@ -178,7 +178,8 @@ class SplitTunnelRuntime:
             def verify_rules(_cgroup_path: str) -> bool:
                 return self.helper.verify(
                     scope=policy["scope"], level=policy["level"],
-                    table=policy["table"], tunnel=snapshot.tunnel_interface,
+                    table=policy["table"], cgroup_path=policy["cgroup_path"],
+                    tunnel=snapshot.tunnel_interface,
                     dns_servers=tuple(dns["servers"]),
                     priority=policy["priority"],
                 )
