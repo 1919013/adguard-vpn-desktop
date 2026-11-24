@@ -247,17 +247,21 @@ class SplitTunnelPrivilegedHelper:
         )
         if code:
             return False
+        compact_output = " ".join(nft_text.split()).replace(f'"{scope}"', scope)
+        mark_pattern = rf"0x0*{mark:x}"
         expected_rule = (
-            f"socket cgroupv2 level {level} {scope} "
-            f"meta mark set {hex(mark)}"
+            rf"socket cgroupv2 level {level} {re.escape(scope)} "
+            rf"meta mark set {mark_pattern}"
         )
-        compact_output = " ".join(nft_text.split())
-        if expected_rule not in compact_output:
+        if not re.search(expected_rule, compact_output):
             return False
         for server in dns_servers:
             family = "ip6" if ":" in server else "ip"
             if any(
-                f"{family} daddr {server} {protocol} dport 53 meta mark set {hex(mark)}" not in compact_output
+                not re.search(
+                    rf"{family} daddr {re.escape(server)} {protocol} dport 53 meta mark set {mark_pattern}",
+                    compact_output,
+                )
                 for protocol in ("udp", "tcp")
             ):
                 return False
@@ -269,12 +273,18 @@ class SplitTunnelPrivilegedHelper:
         if code:
             return False
         compact_guard = " ".join(guard_text.split())
-        if f'meta mark {hex(mark)} oifname != "{tunnel_interface}" drop' not in compact_guard:
+        if not re.search(
+            rf'meta mark {mark_pattern} oifname != "{re.escape(tunnel_interface)}" drop',
+            compact_guard,
+        ):
             return False
         for server in dns_servers:
             family = "ip6" if ":" in server else "ip"
             if any(
-                f'{family} daddr {server} {protocol} dport 53 oifname != "{tunnel_interface}" drop' not in compact_guard
+                not re.search(
+                    rf'{family} daddr {re.escape(server)} {protocol} dport 53 oifname != "{re.escape(tunnel_interface)}" drop',
+                    compact_guard,
+                )
                 for protocol in ("udp", "tcp")
             ):
                 return False
