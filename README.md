@@ -1,51 +1,58 @@
 # ADGuard VPN Desktop
 
-Open-source GTK desktop interface for **AdGuard VPN CLI** on Linux. This project is a community GUI wrapper; it is not the official AdGuard desktop application and is not affiliated with AdGuard.
+Open-source GTK desktop interface for **AdGuard VPN CLI** on Linux. This is a community GUI wrapper, not the official AdGuard desktop application, and is not affiliated with AdGuard.
 
-## Current implementation status
+## Current implementation
 
 - AdGuard VPN CLI connection, disconnection, status and location selection.
 - Read-only discovery of network interfaces, IP addresses and NetworkManager device state.
-- A status line reports the tunnel interface named by AdGuard VPN CLI (for example, `tun0`).
-- An experimental DNS tab with backup validation and guarded operations limited to explicitly allowlisted test profiles.
+- Applications catalog for Debian and Flatpak desktop entries, case-insensitive prefix search, custom executable paths and persistent selection.
+- Per-application **Launch through VPN** action using a gated systemd user scope: the target process is held until routing rules are installed and independently verified.
+- Narrow root helper invoked through pkexec and a dedicated polkit action.
+- VPN status watcher. If the CLI disconnects or changes TUN interface, the application scope is stopped.
+- DNS preflight: the active /etc/resolv.conf must exactly match the AdGuard VPN CLI resolver file, and each resolver address must route through the active TUN.
+- nftables guards mark the selected app's sockets and DNS packets to the verified CLI resolver addresses. Marked app traffic and those DNS requests are dropped if their output interface is not the active TUN.
+- Debian package metadata and CI package-build workflow.
 
-## Not yet implemented or verified
+## Important limitations
 
-- The Applications tab discovers Debian and Flatpak `.desktop` entries, supports case-insensitive prefix search and custom executable paths, and persists selected entries in `~/.config/adguard-vpn-desktop/applications.json` with mode `0600`. This is still only a saved selection: it does not change routing.
-- The split-tunnel backend includes scoped native/Flatpak launch primitives, route inspection, a fail-closed planner and a separate privileged helper with preflight checks and rollback. The helper is not yet connected to the GUI/polkit; DNS policy is not ready, no rules are applied, and no application traffic is routed.
-- Applying selected network interfaces to routing. The Interfaces tab currently discovers and displays devices; its checkboxes are temporary selections only.
-- General-purpose DNS management for arbitrary user NetworkManager profiles.
-- AdGuard product management, desktop-wrapper updates, full settings and browser-based help.
-- End-to-end verification of routing, DNS leaks and IPv6 on supported Debian systems.
+- Only **one protected application at a time** is currently supported. Concurrent Chrome and Telegram sessions need a shared routing-session/refcount design.
+- D-Bus-activatable applications and already-running instances are refused to avoid forwarding requests to processes outside the protected cgroup.
+- Local DNS stub resolvers such as systemd-resolved/dnsmasq are refused until their upstream servers can be verified safely.
+- The VPN watcher polls CLI status. If the GUI supervisor remains alive, it terminates the app on disconnect; kernel egress guards remain as the fail-closed backstop if the TUN route disappears.
+- The DNS preflight is deliberately strict. If system DNS is not set to the AdGuard VPN CLI resolver addresses and routed through TUN, the app is not launched.
+- The package build is exercised in GitHub Actions, but installation and real traffic tests have not yet been performed on Debian 13. Do not treat split tunneling as production-ready until those tests pass.
+- The DNS tab still has limited operations restricted to explicitly allowlisted test profiles; it is not general-purpose NetworkManager DNS management.
+- Applying selected network interfaces, full AdGuard product management and browser-based help remain unfinished.
 
 ## Split-tunneling design constraint
 
-The documented AdGuard VPN CLI Linux interface provides TUN/SOCKS modes, tunnel routing modes (`AUTO`, `SCRIPT`, `NONE`) and **domain** exclusions through `site-exclusions`. Its documented exclusions are not a per-process application selector. The custom routing script is a supported extension point for route-level policies, but it does not by itself provide an application picker.
+AdGuard VPN CLI provides TUN/SOCKS modes, tunnel routing modes (AUTO, SCRIPT, NONE) and domain exclusions through site-exclusions. Domain exclusions are not a per-process application selector. The process-aware routing in this project is a separate Linux mechanism layered on top of the CLI.
 
-Therefore, this project must not present an application checkbox as working split tunneling until a separate Linux process-aware routing mechanism is implemented and verified. See the [AdGuard VPN for Linux settings documentation](https://adguard-vpn.com/kb/adguard-vpn-for-linux/settings/) and [exclusions documentation](https://adguard-vpn.com/kb/adguard-vpn-for-linux/exclusions/).
+See the [AdGuard VPN for Linux settings documentation](https://adguard-vpn.com/kb/adguard-vpn-for-linux/settings/) and [exclusions documentation](https://adguard-vpn.com/kb/adguard-vpn-for-linux/exclusions/).
 
 ## Architecture
 
-- `core/`: CLI integration and application logic.
-- `modules/`: user-facing features.
-- `services/`: operating-system integration.
-- `ui/`: GTK interface.
-- `i18n/`: translations.
-- `docs/`: documentation.
-- `tests/`: automated tests.
+- core/: CLI integration and application logic.
+- modules/: user-facing features.
+- services/: operating-system integration.
+- ui/: GTK interface.
+- i18n/: translations.
+- docs/: documentation.
+- tests/: automated tests.
 
-The UI must not execute operating-system commands directly. System operations are isolated behind core/service interfaces.
+The UI must not execute privileged operating-system commands directly. Privileged operations are restricted to the fixed helper and validated arguments.
 
 ## Safety
 
-- Interface discovery is read-only.
-- DNS changes are restricted to named test profiles; production profiles are not modified.
-- DNS changes require a validated backup and verified rollback.
-- Do not claim split tunneling is ready until routing, DNS and IPv6 are verified.
+- Network interface discovery and DNS preflight are read-only.
+- DNS firewall guards apply only to the active protected-app session and the resolver addresses verified before launch.
+- Existing nftables tables are never adopted or overwritten.
+- Helper-owned routing state is stored with restrictive permissions and removed after the protected application exits.
 - Never commit credentials, private keys or local DNS snapshots.
 
 ## License
 
-The project is intended to use **GPL-3.0-or-later**, as agreed for this project. The canonical license text still needs to be added to the repository before release.
+The project is intended to use **GPL-3.0-or-later**. See Debian copyright metadata; the canonical full license text should be included before release.
 
 See [README.ru.md](README.ru.md) for Russian.
