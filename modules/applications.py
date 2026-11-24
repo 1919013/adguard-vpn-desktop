@@ -4,7 +4,10 @@ The selected list is persisted locally, but is not yet applied to VPN routing.
 """
 from __future__ import annotations
 
+import threading
+
 from services.application_selection import load_selection, save_selection
+from services.split_tunnel_runtime import SplitTunnelRuntime
 from services.desktop_applications import (
     custom_application_from_path,
     discover_applications,
@@ -15,7 +18,7 @@ from services.desktop_applications import (
 def build_applications_tab():
     import gi
     gi.require_version("Gtk", "3.0")
-    from gi.repository import Gtk
+    from gi.repository import Gtk, GLib
 
     root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     root.set_border_width(14)
@@ -25,9 +28,9 @@ def build_applications_tab():
     root.pack_start(title, False, False, 0)
 
     note = Gtk.Label(
-        label=("Каталог программ Debian и Flatpak. Выбор сохраняется между запусками "
-               "программы, но пока не меняет маршрутизацию. Раздельный туннель будет "
-               "включён после завершения проверок DNS, polkit и запуска приложений."),
+        label=("Выберите приложение и нажмите «Запустить через VPN». Оно будет запущено в отдельной "
+               "cgroup только после проверки TUN, маршрутов, DNS и установки правил. "
+               "Сначала полностью закрой уже работающий экземпляр программы. Пока запускается одно приложение за раз."),
         xalign=0,
     )
     note.set_line_wrap(True)
@@ -66,6 +69,42 @@ def build_applications_tab():
     applications = []
     selected = set()
     custom_paths = set()
+    runtime = SplitTunnelRuntime()
+    launching = False
+    launch_controls = {}
+
+    def refresh_launch_controls():
+        for desktop_id, button in launch_controls.items():
+            button.set_sensitive(not launching and desktop_id in selected)
+
+    def launch_application(app):
+        nonlocal launching
+        if app.desktop_id not in selected:
+            summary.set_text("Сначала отметь приложение флажком.")
+            return
+        if launching:
+            summary.set_text("Дождись завершения текущего запуска: пока поддерживается один активный процесс.")
+            return
+        launching = True
+        refresh_launch_controls()
+        summary.set_text(f"Подготовка безопасного запуска {app.name}…")
+
+        def worker():
+            try:
+                code = runtime.launch(app)
+                message = f"{app.name}: завершено (код {code}). Правила маршрутизации очищены."
+            except Exception as exc:
+                message = f"{app.name}: запуск отменён. {exc}"
+            GLib.idle_add(finish_launch, message)
+
+        threading.Thread(target=worker, name="adguard-split-tunnel-launch", daemon=True).start()
+
+    def finish_launch(message):
+        nonlocal launching
+        launching = False
+        summary.set_text(message)
+        refresh_launch_controls()
+        return False
 
     def persist():
         try:
@@ -79,9 +118,11 @@ def build_applications_tab():
         else:
             selected.discard(desktop_id)
         persist()
+        refresh_launch_controls()
         summary.set_text(f"Найдено: {len(applications)} · Выбрано: {len(selected)}")
 
     def render(*_):
+        launch_controls.clear()
         for child in rows.get_children():
             rows.remove(child)
         visible = filter_applications(applications, search.get_text())
@@ -89,10 +130,19 @@ def build_applications_tab():
             details = "Flatpak" if app.flatpak else "Системное приложение"
             if app.dbus_activatable:
                 details += " · D-Bus activation (пока не поддерживается)"
-            check = Gtk.CheckButton(label=f"{app.name} — {details}\n{app.desktop_id}")
+            line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            check = Gtk.CheckButton(label=f"{app.name} — {details}\\n{app.desktop_id}")
             check.set_active(app.desktop_id in selected)
             check.connect("toggled", on_toggle, app.desktop_id)
-            rows.pack_start(check, False, False, 0)
+            line.pack_start(check, True, True, 0)
+            launch_button = Gtk.Button(label="Запустить через VPN")
+            launch_button.connect("clicked", lambda _button, item=app: launch_application(item))
+            launch_button.set_sensitive(app.desktop_id in selected and not launching and not app.dbus_activatable)
+            if app.dbus_activatable:
+                launch_button.set_tooltip_text("D-Bus activation пока не поддерживается")
+            launch_controls[app.desktop_id] = launch_button
+            line.pack_start(launch_button, False, False, 0)
+            rows.pack_start(line, False, False, 0)
         if not visible:
             rows.pack_start(Gtk.Label(label="Приложения не найдены.", xalign=0), False, False, 0)
         rows.show_all()

@@ -6,6 +6,8 @@ It is not wired into the GUI until packaging and polkit policy are reviewed.
 """
 from __future__ import annotations
 
+import argparse
+import ipaddress
 import json
 import os
 import re
@@ -40,6 +42,44 @@ def _run(argv: list[str], *, input_text: str | None = None,
         return 1, str(exc)
 
 
+def _validate_cgroup_path(cgroup_path: str, scope: str, level: int) -> tuple[str, ...]:
+    if not isinstance(cgroup_path, str) or not cgroup_path.startswith("/") or len(cgroup_path) > 4096:
+        raise HelperError("Недопустимый абсолютный путь cgroup v2.")
+    parts = tuple(part for part in cgroup_path.split("/") if part)
+    if (
+        len(parts) != level or not parts or parts[0] != "user.slice"
+        or parts[-1] != scope or any(part in {".", ".."} for part in parts)
+    ):
+        raise HelperError("Путь cgroup v2 не соответствует уровню и имени scope.")
+    if any(not re.fullmatch(r"[A-Za-z0-9_.@:-]+", part) for part in parts):
+        raise HelperError("Путь cgroup v2 содержит недопустимые компоненты.")
+    return parts
+
+
+def _cgroup_has_processes(cgroup_path: str, cgroup_root: Path = Path("/sys/fs/cgroup")) -> bool:
+    root = Path(cgroup_root)
+    target = root.joinpath(*_validate_cgroup_path(
+        cgroup_path, Path(cgroup_path).name, len([p for p in cgroup_path.split("/") if p])
+    ))
+    try:
+        if not target.exists():
+            return False
+        if target.is_symlink() or not target.is_dir():
+            raise HelperError("Каталог cgroup scope имеет небезопасный тип.")
+        process_files = list(target.rglob("cgroup.procs"))
+        if not process_files:
+            raise HelperError("Не удалось обнаружить cgroup.procs; правила оставлены для безопасности.")
+        for process_file in process_files:
+            try:
+                if any(line.strip().isdigit() for line in process_file.read_text(encoding="ascii").splitlines()):
+                    return True
+            except OSError as exc:
+                raise HelperError(f"Не удалось проверить активность cgroup: {exc}") from exc
+        return False
+    except OSError as exc:
+        raise HelperError(f"Не удалось проверить каталог cgroup: {exc}") from exc
+
+
 def _validate(scope: str, level: int, table: int, mark: int, priority: int) -> None:
     if not isinstance(scope, str) or not SCOPE_RE.fullmatch(scope):
         raise HelperError("Недопустимое имя systemd scope.")
@@ -58,11 +98,13 @@ class SplitTunnelPrivilegedHelper:
 
     def __init__(self, state_file: Path = STATE_FILE, runner: Callable = subprocess.run,
                  euid: Callable[[], int] = os.geteuid,
-                 which: Callable[[str], str | None] = shutil.which):
+                 which: Callable[[str], str | None] = shutil.which,
+                 cgroup_root: Path = Path("/sys/fs/cgroup")):
         self.state_file = Path(state_file)
         self.runner = runner
         self.euid = euid
         self.which = which
+        self.cgroup_root = Path(cgroup_root)
 
     def _exec(self, argv: list[str], input_text: str | None = None) -> None:
         code, output = _run(argv, input_text=input_text, runner=self.runner)
@@ -114,11 +156,21 @@ class SplitTunnelPrivilegedHelper:
             except FileNotFoundError:
                 pass
 
-    def apply(self, *, scope: str, level: int, table: int,
+    def apply(self, *, scope: str, level: int, table: int, cgroup_path: str,
+              tunnel_interface: str, dns_servers: list[str] | tuple[str, ...],
               mark: int = DEFAULT_MARK, priority: int = 1061) -> dict:
         if self.euid() != 0:
             raise HelperError("Для изменения nftables и ip rule нужны права root.")
         _validate(scope, level, table, mark, priority)
+        _validate_cgroup_path(cgroup_path, scope, level)
+        if not isinstance(tunnel_interface, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", tunnel_interface):
+            raise HelperError("Недопустимое имя TUN-интерфейса.")
+        try:
+            dns_servers = sorted({str(ipaddress.ip_address(item)) for item in dns_servers})
+        except (TypeError, ValueError) as exc:
+            raise HelperError("Список DNS-серверов содержит некорректный IP-адрес.") from exc
+        if not dns_servers:
+            raise HelperError("Для DNS-защиты требуется хотя бы один проверенный DNS-сервер.")
         if self._read_state() is not None:
             raise HelperError("Уже существует состояние раздельной маршрутизации; сначала выполните remove.")
         # Refuse to adopt or overwrite any pre-existing nft table.
@@ -155,13 +207,24 @@ class SplitTunnelPrivilegedHelper:
                 if (mark & mask) == (value & mask):
                     raise HelperError("Выбранная метка конфликтует с существующим ip rule.")
 
-        nft_batch = (
-            f'add table inet {NFT_TABLE} {{ comment "Owned by ADGuard VPN Desktop"; }}\n'
-            f"add chain inet {NFT_TABLE} {NFT_CHAIN} "
-            "{ type route hook output priority mangle; policy accept; }\n"
-            f"add rule inet {NFT_TABLE} {NFT_CHAIN} "
-            f"socket cgroupv2 level {level} {scope} meta mark set {hex(mark)}\n"
-        )
+        nft_lines = [
+            f'add table inet {NFT_TABLE} {{ comment "Owned by ADGuard VPN Desktop"; }}',
+            f"add chain inet {NFT_TABLE} {NFT_CHAIN} {{ type route hook output priority mangle; policy accept; }}",
+            f"add rule inet {NFT_TABLE} {NFT_CHAIN} socket cgroupv2 level {level} {scope} meta mark set {hex(mark)}",
+            f"add chain inet {NFT_TABLE} app_guard {{ type filter hook output priority filter; policy accept; }}",
+            f'add rule inet {NFT_TABLE} app_guard meta mark {hex(mark)} oifname != "{tunnel_interface}" drop',
+        ]
+        for server in dns_servers:
+            family = "ip6" if ":" in server else "ip"
+            for protocol in ("udp", "tcp"):
+                nft_lines.insert(
+                    3,
+                    f"add rule inet {NFT_TABLE} {NFT_CHAIN} {family} daddr {server} {protocol} dport 53 meta mark set {hex(mark)}"
+                )
+                nft_lines.append(
+                    f'add rule inet {NFT_TABLE} app_guard {family} daddr {server} {protocol} dport 53 oifname != "{tunnel_interface}" drop'
+                )
+        nft_batch = "\n".join(nft_lines) + "\n"
         ip_add = ["ip", "rule", "add", "priority", str(priority),
                   "fwmark", hex(mark), "lookup", str(table)]
         # Record intent first. If the process is interrupted, remove can still
@@ -169,6 +232,9 @@ class SplitTunnelPrivilegedHelper:
         state = {
             "owner": "adguard-vpn-desktop", "scope": scope, "level": level,
             "table": table, "mark": mark, "priority": priority,
+            "cgroup_path": cgroup_path,
+            "cgroup_path": cgroup_path,
+            "tunnel_interface": tunnel_interface, "dns_servers": dns_servers,
             "ip_rule": ip_add, "phase": "intent",
         }
         self._write_state(state)
@@ -198,16 +264,23 @@ class SplitTunnelPrivilegedHelper:
         return {"active": True, "scope": scope, "table": table, "mark": hex(mark), "priority": priority}
 
 
-    def verify_active(self, *, scope: str, level: int, table: int,
+    def verify_active(self, *, scope: str, level: int, table: int, cgroup_path: str,
+                      tunnel_interface: str, dns_servers: list[str] | tuple[str, ...],
                       mark: int = DEFAULT_MARK, priority: int = 1061) -> bool:
         """Independently verify the exact live nftables and ip rule objects."""
         if self.euid() != 0:
             raise HelperError("Проверка привилегированных правил выполняется через root helper.")
         _validate(scope, level, table, mark, priority)
+        _validate_cgroup_path(cgroup_path, scope, level)
         state = self._read_state()
+        try:
+            dns_servers = sorted({str(ipaddress.ip_address(item)) for item in dns_servers})
+        except (TypeError, ValueError):
+            return False
         expected = {
             "scope": scope, "level": level, "table": table,
             "mark": mark, "priority": priority,
+            "tunnel_interface": tunnel_interface, "dns_servers": dns_servers,
         }
         if state is None or any(state.get(key) != value for key, value in expected.items()):
             return False
@@ -218,12 +291,47 @@ class SplitTunnelPrivilegedHelper:
         )
         if code:
             return False
+        compact_output = " ".join(nft_text.split()).replace(f'"{scope}"', scope)
+        mark_pattern = rf"0x0*{mark:x}"
         expected_rule = (
-            f"socket cgroupv2 level {level} {scope} "
-            f"meta mark set {hex(mark)}"
+            rf"socket cgroupv2 level {level} {re.escape(scope)} "
+            rf"meta mark set {mark_pattern}"
         )
-        if expected_rule not in " ".join(nft_text.split()):
+        if not re.search(expected_rule, compact_output):
             return False
+        for server in dns_servers:
+            family = "ip6" if ":" in server else "ip"
+            if any(
+                not re.search(
+                    rf"{family} daddr {re.escape(server)} {protocol} dport 53 meta mark set {mark_pattern}",
+                    compact_output,
+                )
+                for protocol in ("udp", "tcp")
+            ):
+                return False
+
+        code, guard_text = _run(
+            ["nft", "list", "chain", "inet", NFT_TABLE, "app_guard"],
+            runner=self.runner,
+        )
+        if code:
+            return False
+        compact_guard = " ".join(guard_text.split())
+        if not re.search(
+            rf'meta mark {mark_pattern} oifname != "{re.escape(tunnel_interface)}" drop',
+            compact_guard,
+        ):
+            return False
+        for server in dns_servers:
+            family = "ip6" if ":" in server else "ip"
+            if any(
+                not re.search(
+                    rf'{family} daddr {re.escape(server)} {protocol} dport 53 oifname != "{re.escape(tunnel_interface)}" drop',
+                    compact_guard,
+                )
+                for protocol in ("udp", "tcp")
+            ):
+                return False
 
         code, rules_text = _run(["ip", "-j", "rule", "show"], runner=self.runner)
         if code:
@@ -264,6 +372,12 @@ class SplitTunnelPrivilegedHelper:
         # command array read from disk.
         _validate(state.get("scope"), state.get("level"), state.get("table"),
                   state.get("mark"), state.get("priority"))
+        cgroup_path = state.get("cgroup_path")
+        _validate_cgroup_path(cgroup_path, state["scope"], state["level"])
+        if _cgroup_has_processes(cgroup_path, self.cgroup_root):
+            raise HelperError(
+                "Защищённый scope ещё содержит процессы; правила оставлены для предотвращения утечки."
+            )
         ip_delete = ["ip", "rule", "del", "priority", str(state["priority"]),
                      "fwmark", hex(state["mark"]), "lookup", str(state["table"])]
         # Inspect policy rules first. Never discard state while an owned rule
@@ -318,3 +432,47 @@ class SplitTunnelPrivilegedHelper:
             raise HelperError("Не удалось проверить таблицу nftables перед удалением: " + (table_text or "ошибка nft"))
         self.state_file.unlink(missing_ok=True)
         return {"active": False, "removed": True}
+
+
+def main(argv=None) -> int:
+    """Command-line entry point used only by the fixed pkexec helper."""
+    parser = argparse.ArgumentParser(prog="adguard-vpn-desktop-helper")
+    sub = parser.add_subparsers(dest="operation", required=True)
+    for operation in ("apply", "verify"):
+        command = sub.add_parser(operation)
+        command.add_argument("--scope", required=True)
+        command.add_argument("--level", required=True, type=int)
+        command.add_argument("--table", required=True, type=int)
+        command.add_argument("--cgroup", required=True)
+        command.add_argument("--tunnel", required=True)
+        command.add_argument("--dns-server", action="append", required=True)
+        command.add_argument("--priority", type=int, default=1061)
+    sub.add_parser("remove")
+    args = parser.parse_args(argv)
+    helper = SplitTunnelPrivilegedHelper()
+    try:
+        if args.operation == "apply":
+            result = helper.apply(
+                scope=args.scope, level=args.level, table=args.table, cgroup_path=args.cgroup,
+                tunnel_interface=args.tunnel, dns_servers=args.dns_server,
+                priority=args.priority,
+            )
+        elif args.operation == "verify":
+            result = {
+                "ready": helper.verify_active(
+                    scope=args.scope, level=args.level, table=args.table, cgroup_path=args.cgroup,
+                    tunnel_interface=args.tunnel, dns_servers=args.dns_server,
+                    priority=args.priority,
+                )
+            }
+        else:
+            result = helper.remove()
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        return 0
+    except HelperError as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

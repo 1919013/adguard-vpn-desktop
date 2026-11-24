@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""Installed pkexec entry point for ADGuard VPN Desktop."""
+import sys
+
+sys.path.insert(0, "/usr/lib/adguard-vpn-desktop")
+
+from services.split_tunnel_privileged import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

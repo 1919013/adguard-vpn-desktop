@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+export PYTHONPATH="/usr/lib/adguard-vpn-desktop${PYTHONPATH:+:${PYTHONPATH}}"
+exec /usr/bin/python3 /usr/lib/adguard-vpn-desktop/main.py "$@"

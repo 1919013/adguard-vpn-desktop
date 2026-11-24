@@ -195,31 +195,50 @@ class SplitTunnelLaunchGate:
         except Exception as exc:
             raise LaunchGateError(f"Безопасный запуск приложения прерван: {exc}") from exc
         finally:
-            if not released and process is not None and process.poll() is None:
+            cleanup_error = None
+            try:
+                if process is not None and process.poll() is None:
+                    try:
+                        self.scope_stopper(unit)
+                    except Exception:
+                        pass
+                    try:
+                        process.terminate()
+                    except Exception:
+                        pass
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            process.kill()
+                            process.wait(timeout=5)
+                        except Exception:
+                            pass
+                if applied:
+                    try:
+                        remove_rules()
+                    except Exception as exc:
+                        cleanup_error = exc
+            finally:
                 try:
-                    self.scope_stopper(unit)
-                except Exception:
-                    pass
-                try:
-                    process.terminate()
-                except Exception:
-                    pass
-            if applied:
-                try:
-                    remove_rules()
-                except Exception as exc:
-                    # Cleanup failure is always surfaced; never report a safe
-                    # end state when kernel routing objects may still exist.
-                    raise LaunchGateError(
-                        f"Не удалось очистить правила маршрутизации: {exc}"
-                    ) from exc
-            if connection is not None:
-                connection.close()
-            if listener is not None:
-                listener.close()
-            if socket_path is not None:
-                try:
-                    socket_path.unlink()
-                except FileNotFoundError:
-                    pass
-            self._lock.release()
+                    if connection is not None:
+                        try:
+                            connection.close()
+                        except OSError:
+                            pass
+                    if listener is not None:
+                        try:
+                            listener.close()
+                        except OSError:
+                            pass
+                    if socket_path is not None:
+                        try:
+                            socket_path.unlink()
+                        except OSError:
+                            pass
+                finally:
+                    self._lock.release()
+            if cleanup_error is not None:
+                raise LaunchGateError(
+                    f"Не удалось очистить правила маршрутизации: {cleanup_error}"
+                ) from cleanup_error

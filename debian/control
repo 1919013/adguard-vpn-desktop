@@ -1,0 +1,22 @@
+Source: adguard-vpn-desktop
+Section: net
+Priority: optional
+Maintainer: ADGuard VPN Desktop contributors <noreply@example.invalid>
+Standards-Version: 4.7.0
+Build-Depends: debhelper-compat (= 13)
+Rules-Requires-Root: no
+
+Package: adguard-vpn-desktop
+Architecture: all
+Depends: ${misc:Depends},
+         python3 (>= 3.11),
+         python3-gi,
+         gir1.2-gtk-3.0,
+         iproute2,
+         nftables,
+         systemd,
+         pkexec,
+         polkitd
+Description: community GTK wrapper for AdGuard VPN CLI
+ ADGuard VPN Desktop is a community graphical wrapper for the official
+ AdGuard VPN CLI. It is not the official AdGuard desktop application.
