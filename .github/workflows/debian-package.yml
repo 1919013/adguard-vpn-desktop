@@ -18,9 +18,11 @@ jobs:
         run: |
           chmod 0755 debian/rules tools/adguard-vpn-desktop tools/adguard-vpn-desktop-helper
           dpkg-buildpackage --build=binary --no-sign
+          mkdir -p dist
+          cp ../adguard-vpn-desktop_*.deb dist/
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: adguard-vpn-desktop-deb
-          path: ../adguard-vpn-desktop_*.deb
+          path: dist/*.deb
           if-no-files-found: error
