@@ -145,6 +145,7 @@ class PrivilegedHelperTests(unittest.TestCase):
                 "level": 5, "table": 880, "mark": 0xAD61,
                 "priority": 1061, "phase": "active",
             }))
+            state_path.chmod(0o600)
             runner = FakeRunner(initial_rules=[
                 {"priority": 0, "table": "local"},
                 {"priority": 1061, "fwmark": "0xad61", "table": "880"},
