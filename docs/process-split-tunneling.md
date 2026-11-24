@@ -34,6 +34,8 @@ Official reference: https://adguard-vpn.com/kb/adguard-vpn-for-linux/settings/
 
 `services/split_tunnel_privileged.py` now adds a narrow root-side apply/remove implementation. It accepts only a validated scope name, cgroup level, route table, mark and priority; it does not accept arbitrary shell commands or nft snippets. It checks for an existing nftables table and conflicting `ip rule` entries, writes a root-owned state record, creates the nftables table first, adds the policy rule second, and removes the newly-created nftables table if the second step fails. Removal reconstructs the exact policy rule from validated state and requires the nftables ownership comment before deleting the table.
 
+The helper's cleanup path now inspects the live `ip -j rule show` output, removes only the exact rule recorded in its root-owned state, verifies that the rule is gone, and retains state / nftables objects if rule removal fails. This avoids silently losing the recovery record while a policy rule may still be active.
+
 This helper is **not yet connected to the GTK interface or installed through a polkit policy/package**. It is not safe to invoke manually as a user-facing feature yet. DNS policy, verification of the actual AdGuard CLI SCRIPT lifecycle, endpoint protection, reconnect cleanup and real Debian/Flatpak tests remain blockers. The feature is therefore still not operational.
 
 ## Desktop application catalog
