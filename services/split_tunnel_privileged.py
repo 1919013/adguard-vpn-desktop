@@ -42,6 +42,41 @@ def _run(argv: list[str], *, input_text: str | None = None,
         return 1, str(exc)
 
 
+def _validate_cgroup_path(cgroup_path: str, scope: str, level: int) -> tuple[str, ...]:
+    if not isinstance(cgroup_path, str) or not cgroup_path.startswith("/") or len(cgroup_path) > 4096:
+        raise HelperError("Недопустимый абсолютный путь cgroup v2.")
+    parts = tuple(part for part in cgroup_path.split("/") if part)
+    if (
+        len(parts) != level or not parts or parts[0] != "user.slice"
+        or parts[-1] != scope or any(part in {".", ".."} for part in parts)
+    ):
+        raise HelperError("Путь cgroup v2 не соответствует уровню и имени scope.")
+    if any(not re.fullmatch(r"[A-Za-z0-9_.@:-]+", part) for part in parts):
+        raise HelperError("Путь cgroup v2 содержит недопустимые компоненты.")
+    return parts
+
+
+def _cgroup_has_processes(cgroup_path: str) -> bool:
+    root = Path("/sys/fs/cgroup")
+    target = root.joinpath(*_validate_cgroup_path(
+        cgroup_path, Path(cgroup_path).name, len([p for p in cgroup_path.split("/") if p])
+    ))
+    try:
+        if not target.exists():
+            return False
+        if target.is_symlink() or not target.is_dir():
+            raise HelperError("Каталог cgroup scope имеет небезопасный тип.")
+        for process_file in target.rglob("cgroup.procs"):
+            try:
+                if any(line.strip().isdigit() for line in process_file.read_text(encoding="ascii").splitlines()):
+                    return True
+            except OSError as exc:
+                raise HelperError(f"Не удалось проверить активность cgroup: {exc}") from exc
+        return False
+    except OSError as exc:
+        raise HelperError(f"Не удалось проверить каталог cgroup: {exc}") from exc
+
+
 def _validate(scope: str, level: int, table: int, mark: int, priority: int) -> None:
     if not isinstance(scope, str) or not SCOPE_RE.fullmatch(scope):
         raise HelperError("Недопустимое имя systemd scope.")
@@ -116,12 +151,13 @@ class SplitTunnelPrivilegedHelper:
             except FileNotFoundError:
                 pass
 
-    def apply(self, *, scope: str, level: int, table: int,
+    def apply(self, *, scope: str, level: int, table: int, cgroup_path: str,
               tunnel_interface: str, dns_servers: list[str] | tuple[str, ...],
               mark: int = DEFAULT_MARK, priority: int = 1061) -> dict:
         if self.euid() != 0:
             raise HelperError("Для изменения nftables и ip rule нужны права root.")
         _validate(scope, level, table, mark, priority)
+        _validate_cgroup_path(cgroup_path, scope, level)
         if not isinstance(tunnel_interface, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", tunnel_interface):
             raise HelperError("Недопустимое имя TUN-интерфейса.")
         try:
@@ -191,6 +227,8 @@ class SplitTunnelPrivilegedHelper:
         state = {
             "owner": "adguard-vpn-desktop", "scope": scope, "level": level,
             "table": table, "mark": mark, "priority": priority,
+            "cgroup_path": cgroup_path,
+            "cgroup_path": cgroup_path,
             "tunnel_interface": tunnel_interface, "dns_servers": dns_servers,
             "ip_rule": ip_add, "phase": "intent",
         }
@@ -221,13 +259,14 @@ class SplitTunnelPrivilegedHelper:
         return {"active": True, "scope": scope, "table": table, "mark": hex(mark), "priority": priority}
 
 
-    def verify_active(self, *, scope: str, level: int, table: int,
+    def verify_active(self, *, scope: str, level: int, table: int, cgroup_path: str,
                       tunnel_interface: str, dns_servers: list[str] | tuple[str, ...],
                       mark: int = DEFAULT_MARK, priority: int = 1061) -> bool:
         """Independently verify the exact live nftables and ip rule objects."""
         if self.euid() != 0:
             raise HelperError("Проверка привилегированных правил выполняется через root helper.")
         _validate(scope, level, table, mark, priority)
+        _validate_cgroup_path(cgroup_path, scope, level)
         state = self._read_state()
         try:
             dns_servers = sorted({str(ipaddress.ip_address(item)) for item in dns_servers})
@@ -328,6 +367,12 @@ class SplitTunnelPrivilegedHelper:
         # command array read from disk.
         _validate(state.get("scope"), state.get("level"), state.get("table"),
                   state.get("mark"), state.get("priority"))
+        cgroup_path = state.get("cgroup_path")
+        _validate_cgroup_path(cgroup_path, state["scope"], state["level"])
+        if _cgroup_has_processes(cgroup_path):
+            raise HelperError(
+                "Защищённый scope ещё содержит процессы; правила оставлены для предотвращения утечки."
+            )
         ip_delete = ["ip", "rule", "del", "priority", str(state["priority"]),
                      "fwmark", hex(state["mark"]), "lookup", str(state["table"])]
         # Inspect policy rules first. Never discard state while an owned rule
@@ -393,6 +438,7 @@ def main(argv=None) -> int:
         command.add_argument("--scope", required=True)
         command.add_argument("--level", required=True, type=int)
         command.add_argument("--table", required=True, type=int)
+        command.add_argument("--cgroup", required=True)
         command.add_argument("--tunnel", required=True)
         command.add_argument("--dns-server", action="append", required=True)
         command.add_argument("--priority", type=int, default=1061)
@@ -402,14 +448,14 @@ def main(argv=None) -> int:
     try:
         if args.operation == "apply":
             result = helper.apply(
-                scope=args.scope, level=args.level, table=args.table,
+                scope=args.scope, level=args.level, table=args.table, cgroup_path=args.cgroup,
                 tunnel_interface=args.tunnel, dns_servers=args.dns_server,
                 priority=args.priority,
             )
         elif args.operation == "verify":
             result = {
                 "ready": helper.verify_active(
-                    scope=args.scope, level=args.level, table=args.table,
+                    scope=args.scope, level=args.level, table=args.table, cgroup_path=args.cgroup,
                     tunnel_interface=args.tunnel, dns_servers=args.dns_server,
                     priority=args.priority,
                 )
