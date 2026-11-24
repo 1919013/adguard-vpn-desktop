@@ -66,7 +66,10 @@ def _cgroup_has_processes(cgroup_path: str) -> bool:
             return False
         if target.is_symlink() or not target.is_dir():
             raise HelperError("Каталог cgroup scope имеет небезопасный тип.")
-        for process_file in target.rglob("cgroup.procs"):
+        process_files = list(target.rglob("cgroup.procs"))
+        if not process_files:
+            raise HelperError("Не удалось обнаружить cgroup.procs; правила оставлены для безопасности.")
+        for process_file in process_files:
             try:
                 if any(line.strip().isdigit() for line in process_file.read_text(encoding="ascii").splitlines()):
                     return True
