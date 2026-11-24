@@ -65,7 +65,8 @@ section "AdGuard VPN CLI"
 if command -v adguardvpn-cli >/dev/null 2>&1; then
     run adguardvpn-cli --version
     run adguardvpn-cli status
-    run adguardvpn-cli config show
+    printf '\n$ adguardvpn-cli config show (selected non-secret fields)\n'
+    adguardvpn-cli config show 2>&1 | grep -Ei 'mode|routing|change system DNS|DNS upstream' || true
 else
     echo "adguardvpn-cli: not found"
 fi
@@ -77,7 +78,7 @@ else
 fi
 printf '\nActive resolver configuration:\n'
 if test -r /etc/resolv.conf; then
-    sed -n '1,30p' /etc/resolv.conf
+    awk '$1 == "nameserver" || $1 == "options" { print } $1 == "search" { print "search <redacted>" }' /etc/resolv.conf
 else
     echo "/etc/resolv.conf is not readable"
 fi
