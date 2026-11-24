@@ -46,7 +46,7 @@ class PolkitSplitTunnelClient:
             raise PolkitSplitTunnelError("Helper вернул неожиданный формат ответа.")
         return data
 
-    def apply(self, *, scope: str, level: int, table: int,
+    def apply(self, *, scope: str, level: int, table: int, cgroup_path: str,
               tunnel: str, dns_servers: tuple[str, ...], priority: int = 1061) -> dict:
         if not SCOPE_RE.fullmatch(scope):
             raise PolkitSplitTunnelError("Недопустимое имя systemd scope.")
@@ -55,15 +55,15 @@ class PolkitSplitTunnelClient:
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", tunnel) or not dns_servers:
             raise PolkitSplitTunnelError("Не заданы проверенные TUN и DNS-серверы.")
         args = ["--scope", scope, "--level", str(level), "--table", str(table),
-                "--tunnel", tunnel, "--priority", str(priority)]
+                "--cgroup", cgroup_path, "--tunnel", tunnel, "--priority", str(priority)]
         for server in dns_servers:
             args.extend(["--dns-server", server])
         return self._call("apply", *args)
 
-    def verify(self, *, scope: str, level: int, table: int,
+    def verify(self, *, scope: str, level: int, table: int, cgroup_path: str,
                tunnel: str, dns_servers: tuple[str, ...], priority: int = 1061) -> bool:
         args = ["--scope", scope, "--level", str(level), "--table", str(table),
-                "--tunnel", tunnel, "--priority", str(priority)]
+                "--cgroup", cgroup_path, "--tunnel", tunnel, "--priority", str(priority)]
         for server in dns_servers:
             args.extend(["--dns-server", server])
         result = self._call("verify", *args)
