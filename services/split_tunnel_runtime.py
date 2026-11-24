@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 from core.commands import run_cli
 from services.dns_leak_guard import DNSLeakGuard
@@ -73,7 +74,36 @@ class SplitTunnelRuntime:
             for line in result.stdout.splitlines()
         )
 
+    @staticmethod
+    def _already_running(application) -> bool:
+        executable = Path(application.exec_argv[0]).name
+        flatpak_id = application.desktop_id.removesuffix(".desktop")
+        proc = Path("/proc")
+        try:
+            entries = list(proc.iterdir())
+        except OSError:
+            return True
+        for entry in entries:
+            if not entry.name.isdigit() or int(entry.name) == __import__("os").getpid():
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                argv = [part.decode("utf-8", "replace") for part in raw.split(b"\\0") if part]
+                comm = (entry / "comm").read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if application.flatpak and flatpak_id in argv:
+                return True
+            if not application.flatpak and (comm == executable or (argv and Path(argv[0]).name == executable)):
+                return True
+        return False
+
     def launch(self, application) -> int:
+        if self._already_running(application):
+            raise SplitTunnelRuntimeError(
+                "Обнаружен уже запущенный экземпляр приложения. Сначала полностью закрой его, "
+                "иначе desktop/D-Bus activation может передать запрос процессу вне VPN-группы."
+            )
         if application.dbus_activatable:
             raise SplitTunnelRuntimeError(
                 "Приложение использует D-Bus activation; запуск в отдельной cgroup пока запрещён."
