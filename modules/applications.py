@@ -28,9 +28,10 @@ def build_applications_tab():
     root.pack_start(title, False, False, 0)
 
     note = Gtk.Label(
-        label=("Выберите приложение и нажмите «Запустить через VPN». Оно будет запущено в отдельной "
-               "cgroup только после проверки TUN, маршрутов, DNS и установки правил. "
-               "Сначала полностью закрой уже работающий экземпляр программы. Пока запускается одно приложение за раз."),
+        label=("Выберите приложение и нажмите «Запустить через VPN». Каждое приложение запускается "
+               "в отдельном systemd scope внутри общей защищённой cgroup. После проверки TUN, "
+               "маршрутов и DNS несколько разных приложений могут работать одновременно. "
+               "Уже работающий обычным способом экземпляр сначала нужно полностью закрыть."),
         xalign=0,
     )
     note.set_line_wrap(True)
@@ -70,38 +71,37 @@ def build_applications_tab():
     selected = set()
     custom_paths = set()
     runtime = SplitTunnelRuntime()
-    launching = False
+    launching = set()
     launch_controls = {}
 
     def refresh_launch_controls():
         for desktop_id, button in launch_controls.items():
-            button.set_sensitive(not launching and desktop_id in selected)
+            button.set_sensitive(desktop_id not in launching and desktop_id in selected)
 
     def launch_application(app):
         nonlocal launching
         if app.desktop_id not in selected:
             summary.set_text("Сначала отметь приложение флажком.")
             return
-        if launching:
-            summary.set_text("Дождись завершения текущего запуска: пока поддерживается один активный процесс.")
+        if app.desktop_id in launching:
+            summary.set_text(f"{app.name} уже запускается или работает через VPN.")
             return
-        launching = True
+        launching.add(app.desktop_id)
         refresh_launch_controls()
         summary.set_text(f"Подготовка безопасного запуска {app.name}…")
 
         def worker():
             try:
                 code = runtime.launch(app)
-                message = f"{app.name}: завершено (код {code}). Правила маршрутизации очищены."
+                message = f"{app.name}: защищённый процесс завершён (код {code}). Общая политика будет удалена после выхода последнего защищённого приложения."
             except Exception as exc:
                 message = f"{app.name}: запуск отменён. {exc}"
-            GLib.idle_add(finish_launch, message)
+            GLib.idle_add(finish_launch, app.desktop_id, message)
 
         threading.Thread(target=worker, name="adguard-split-tunnel-launch", daemon=True).start()
 
-    def finish_launch(message):
-        nonlocal launching
-        launching = False
+    def finish_launch(desktop_id, message):
+        launching.discard(desktop_id)
         summary.set_text(message)
         refresh_launch_controls()
         return False
@@ -137,7 +137,7 @@ def build_applications_tab():
             line.pack_start(check, True, True, 0)
             launch_button = Gtk.Button(label="Запустить через VPN")
             launch_button.connect("clicked", lambda _button, item=app: launch_application(item))
-            launch_button.set_sensitive(app.desktop_id in selected and not launching and not app.dbus_activatable)
+            launch_button.set_sensitive(app.desktop_id in selected and app.desktop_id not in launching and not app.dbus_activatable)
             if app.dbus_activatable:
                 launch_button.set_tooltip_text("D-Bus activation пока не поддерживается")
             launch_controls[app.desktop_id] = launch_button
