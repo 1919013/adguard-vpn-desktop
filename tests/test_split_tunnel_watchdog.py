@@ -60,6 +60,46 @@ class WatchdogTests(unittest.TestCase):
             "systemctl", "--user", "stop", "adguard-vpn-good.scope"
         ]])
 
+    def test_cleanup_is_retried_after_temporary_polkit_failure(self):
+        from unittest.mock import patch
+
+        class Runner:
+            def __init__(self):
+                self.list_calls = 0
+                self.remove_calls = 0
+
+            def __call__(self, argv, **kwargs):
+                if "list-units" in argv:
+                    self.list_calls += 1
+                    if self.list_calls == 1:
+                        return FakeResult(0, "adguard-vpn-chrome.scope loaded active running")
+                    return FakeResult(0, "")
+                if argv and argv[0] == "pkexec":
+                    self.remove_calls += 1
+                    return FakeResult(1 if self.remove_calls == 1 else 0, "")
+                return FakeResult(0, "")
+
+        runner = Runner()
+        sleeps = 0
+
+        def stop_after_retry(_interval):
+            nonlocal sleeps
+            sleeps += 1
+            if sleeps == 3:
+                raise StopIteration()
+
+        watchdog = SplitTunnelWatchdog(
+            runner=runner,
+            cli_runner=lambda args, timeout=8: (0, "Connected to Riga, running on tun0"),
+            interval=0.2,
+            sleeper=stop_after_retry,
+        )
+        with patch("services.split_tunnel_watchdog.shutil.which", return_value="/usr/bin/fake"):
+            with self.assertRaises(StopIteration):
+                watchdog.run_forever()
+
+        self.assertEqual(runner.remove_calls, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
