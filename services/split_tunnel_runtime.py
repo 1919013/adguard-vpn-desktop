@@ -93,8 +93,12 @@ class SplitTunnelRuntime:
                 comm = (entry / "comm").read_text(encoding="utf-8").strip()
             except OSError:
                 continue
-            if application.flatpak and flatpak_id in argv:
-                return True
+            if application.flatpak:
+                name_tokens = [
+                    token.casefold() for token in re.findall(r"[A-Za-z0-9]{4,}", application.name)
+                ]
+                if flatpak_id in argv or any(token in comm.casefold() for token in name_tokens):
+                    return True
             if not application.flatpak and (comm == executable or (argv and Path(argv[0]).name == executable)):
                 return True
         return False
