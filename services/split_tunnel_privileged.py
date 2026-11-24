@@ -486,9 +486,21 @@ def main(argv=None) -> int:
         lock_fd = os.open("/run/lock/adguard-vpn-desktop-helper.lock", flags, 0o600)
         try:
             metadata = os.fstat(lock_fd)
-            if not stat.S_ISREG(metadata.st_mode):
-                raise HelperError("Файл блокировки helper имеет небезопасный тип.")
+            if (
+                not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0
+                or metadata.st_mode & 0o077
+            ):
+                raise HelperError("Файл блокировки helper имеет небезопасного владельца или права.")
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if args.operation in ("apply", "verify"):
+                caller_uid = os.environ.get("PKEXEC_UID", "")
+                parts = [part for part in args.cgroup.split("/") if part]
+                if (
+                    not caller_uid.isdigit() or len(parts) != 5
+                    or parts[1] != f"user-{caller_uid}.slice"
+                    or parts[2] != f"user@{caller_uid}.service"
+                ):
+                    raise HelperError("Путь cgroup не принадлежит пользователю, запросившему polkit.")
             if args.operation == "apply":
                 result = helper.apply(
                     scope=args.scope, level=args.level, table=args.table, cgroup_path=args.cgroup,
