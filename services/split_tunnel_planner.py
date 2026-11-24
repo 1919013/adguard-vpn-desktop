@@ -30,9 +30,15 @@ class SplitTunnelPlan:
     ip_rule_delete: tuple[str, ...] | None
 
 
-def _default_via(route: dict[str, Any], tunnel: str) -> bool:
+def _default_via(route: dict[str, Any], tunnel: str, table: int) -> bool:
+    """Require the default route to belong to the exact selected VPN table."""
     dst = route.get("dst", "default")
-    return dst in ("default", "0.0.0.0/0", "::/0") and route.get("dev") == tunnel
+    route_table = route.get("table")
+    return (
+        dst in ("default", "0.0.0.0/0", "::/0")
+        and route.get("dev") == tunnel
+        and str(route_table) == str(table)
+    )
 
 
 def _numeric_table(value: str) -> int | None:
@@ -90,13 +96,17 @@ def build_split_tunnel_plan(
             reasons.append("Номер таблицы VPN не является допустимым числом.")
 
     tunnel = snapshot.tunnel_interface
-    if tunnel:
-        has_v4 = any(_default_via(route, tunnel) for route in snapshot.ipv4_routes)
-        has_v6 = any(_default_via(route, tunnel) for route in snapshot.ipv6_routes)
+    if tunnel and table is not None:
+        has_v4 = any(_default_via(route, tunnel, table) for route in snapshot.ipv4_routes)
+        has_v6 = any(_default_via(route, tunnel, table) for route in snapshot.ipv6_routes)
         if not has_v4:
-            reasons.append("Не найден IPv4 default route через VPN TUN.")
+            reasons.append(
+                f"В таблице VPN {table} не найден IPv4 default route через интерфейс {tunnel}."
+            )
         if not has_v6:
-            reasons.append("Не найден IPv6 default route через VPN TUN.")
+            reasons.append(
+                f"В таблице VPN {table} не найден IPv6 default route через интерфейс {tunnel}."
+            )
 
     if not dns_policy_ready:
         reasons.append(

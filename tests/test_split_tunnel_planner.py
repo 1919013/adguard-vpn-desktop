@@ -88,6 +88,50 @@ class SplitTunnelPlannerTests(unittest.TestCase):
         self.assertTrue(any("метк" in reason.casefold() for reason in plan.reasons))
         self.assertNotEqual(plan.rule_priority, 1061)
 
+
+    def test_requires_both_families_in_the_same_selected_vpn_table(self):
+        base = snapshot()
+        split_tables = RoutingSnapshot(
+            connected=base.connected,
+            tunnel_interface=base.tunnel_interface,
+            vpn_tables=base.vpn_tables,
+            ipv4_routes=base.ipv4_routes,
+            ipv6_routes=({"dst": "::/0", "dev": "tun0", "table": 881},),
+            rules=base.rules,
+            warnings=(),
+        )
+        plan = build_split_tunnel_plan(
+            split_tables,
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope",
+            routing_mode="SCRIPT",
+            dns_policy_ready=True,
+            nft_table_absent=True,
+        )
+        self.assertFalse(plan.ready)
+        self.assertIsNone(plan.nft_batch)
+        self.assertTrue(any("IPv6" in reason and "880" in reason for reason in plan.reasons))
+
+    def test_rejects_route_through_tunnel_when_route_table_is_missing(self):
+        base = snapshot()
+        missing_table = RoutingSnapshot(
+            connected=base.connected,
+            tunnel_interface=base.tunnel_interface,
+            vpn_tables=base.vpn_tables,
+            ipv4_routes=({"dst": "default", "dev": "tun0"},),
+            ipv6_routes=base.ipv6_routes,
+            rules=base.rules,
+            warnings=(),
+        )
+        plan = build_split_tunnel_plan(
+            missing_table,
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope",
+            routing_mode="SCRIPT",
+            dns_policy_ready=True,
+            nft_table_absent=True,
+        )
+        self.assertFalse(plan.ready)
+        self.assertTrue(any("IPv4" in reason for reason in plan.reasons))
+
     def test_rejects_multiple_vpn_tables(self):
         base = snapshot()
         ambiguous = RoutingSnapshot(
