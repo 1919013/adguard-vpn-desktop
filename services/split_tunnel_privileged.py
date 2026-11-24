@@ -52,8 +52,8 @@ def _validate_cgroup_path(cgroup_path: str, scope: str, level: int) -> tuple[str
         or parts[-1] != scope or any(part in {".", ".."} for part in parts)
         or not scope.endswith(".slice")
         or len(parts) != 5
-        or not re.fullmatch(r"user-[0-9]+\\.slice", parts[1])
-        or not re.fullmatch(r"user@[0-9]+\\.service", parts[2])
+        or not (parts[1].startswith("user-") and parts[1].endswith(".slice") and parts[1][5:-6].isdigit())
+        or not (parts[2].startswith("user@") and parts[2].endswith(".service") and parts[2][5:-8].isdigit())
         or parts[3] != "app.slice"
         or scope != "app-adguard-vpn.slice"
     ):
