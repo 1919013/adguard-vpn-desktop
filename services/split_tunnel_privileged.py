@@ -166,13 +166,20 @@ class SplitTunnelPrivilegedHelper:
                 if (mark & mask) == (value & mask):
                     raise HelperError("Выбранная метка конфликтует с существующим ip rule.")
 
-        nft_batch = (
-            f'add table inet {NFT_TABLE} {{ comment "Owned by ADGuard VPN Desktop"; }}\n'
-            f"add chain inet {NFT_TABLE} {NFT_CHAIN} "
-            "{ type route hook output priority mangle; policy accept; }\n"
-            f"add rule inet {NFT_TABLE} {NFT_CHAIN} "
-            f"socket cgroupv2 level {level} {scope} meta mark set {hex(mark)}\n"
-        )
+        nft_lines = [
+            f'add table inet {NFT_TABLE} {{ comment "Owned by ADGuard VPN Desktop"; }}',
+            f"add chain inet {NFT_TABLE} {NFT_CHAIN} {{ type route hook output priority mangle; policy accept; }}",
+            f"add rule inet {NFT_TABLE} {NFT_CHAIN} socket cgroupv2 level {level} {scope} meta mark set {hex(mark)}",
+            f"add chain inet {NFT_TABLE} app_guard {{ type filter hook output priority filter; policy accept; }}",
+            f'add rule inet {NFT_TABLE} app_guard meta mark {hex(mark)} oifname != "{tunnel_interface}" drop',
+        ]
+        for server in dns_servers:
+            family = "ip6" if ":" in server else "ip"
+            for protocol in ("udp", "tcp"):
+                nft_lines.append(
+                    f'add rule inet {NFT_TABLE} app_guard {family} daddr {server} {protocol} dport 53 oifname != "{tunnel_interface}" drop'
+                )
+        nft_batch = "\n".join(nft_lines) + "\n"
         ip_add = ["ip", "rule", "add", "priority", str(priority),
                   "fwmark", hex(mark), "lookup", str(table)]
         # Record intent first. If the process is interrupted, remove can still
