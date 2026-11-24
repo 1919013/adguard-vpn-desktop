@@ -67,7 +67,7 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             runner = FakeRunner()
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0, lambda name: "/usr/sbin/nft")
-            result = helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+            result = helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(result["active"])
             state = json.loads((Path(tmp) / "state.json").read_text())
             self.assertEqual(state["phase"], "active")
@@ -85,7 +85,7 @@ class PrivilegedHelperTests(unittest.TestCase):
             runner = FakeRunner(fail_ip_add=True)
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0, lambda name: "/usr/sbin/nft")
             with self.assertRaises(HelperError):
-                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertFalse((Path(tmp) / "state.json").exists())
             self.assertTrue(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
 
@@ -100,7 +100,7 @@ class PrivilegedHelperTests(unittest.TestCase):
                 state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft"
             )
             with self.assertRaisesRegex(HelperError, "сохранено"):
-                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(state_path.exists())
             state = json.loads(state_path.read_text())
             self.assertEqual(state["owner"], "adguard-vpn-desktop")
@@ -121,7 +121,7 @@ class PrivilegedHelperTests(unittest.TestCase):
                 Path(tmp) / "state.json", runner, lambda: 0,
                 lambda name: "/usr/sbin/nft"
             )
-            helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+            helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(helper.verify_active(
                 scope="adguard-vpn-firefox.scope", level=5, table=880,
                 tunnel_interface="tun0", dns_servers=["46.243.231.30"]
@@ -164,14 +164,14 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", FakeRunner(), lambda: 1000)
             with self.assertRaises(HelperError):
-                helper.apply(scope="test.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+                helper.apply(scope="test.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
 
     def test_remove_reconstructs_commands_from_owned_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             state_path = Path(tmp) / "state.json"
             state_path.write_text(json.dumps({
                 "owner": "adguard-vpn-desktop", "scope": "test.scope",
-                "level": 5, "table": 880, "mark": 0xAD61,
+                "level": 5, "table": 880, "cgroup_path": "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope", "mark": 0xAD61,
                 "priority": 1061, "phase": "active",
             }))
             state_path.chmod(0o600)
@@ -192,7 +192,7 @@ class PrivilegedHelperTests(unittest.TestCase):
             state_path = Path(tmp) / "state.json"
             state_path.write_text(json.dumps({
                 "owner": "adguard-vpn-desktop", "scope": "test.scope",
-                "level": 5, "table": 880, "mark": 0xAD61,
+                "level": 5, "table": 880, "cgroup_path": "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope", "mark": 0xAD61,
                 "priority": 1061, "phase": "active",
             }))
             runner = FakeRunner(
