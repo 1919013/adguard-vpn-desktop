@@ -1,0 +1,26 @@
+name: Debian package build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Debian packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debhelper dpkg-dev
+      - name: Build binary package
+        run: |
+          chmod 0755 debian/rules tools/adguard-vpn-desktop tools/adguard-vpn-desktop-helper
+          dpkg-buildpackage --build=binary --no-sign
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: adguard-vpn-desktop-deb
+          path: ../adguard-vpn-desktop_*.deb
+          if-no-files-found: error
