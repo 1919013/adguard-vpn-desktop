@@ -7,6 +7,7 @@ It is not wired into the GUI until packaging and polkit policy are reviewed.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import ipaddress
 import json
 import os
@@ -476,25 +477,36 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     helper = SplitTunnelPrivilegedHelper()
     try:
-        if args.operation == "apply":
-            result = helper.apply(
-                scope=args.scope, level=args.level, table=args.table, cgroup_path=args.cgroup,
-                tunnel_interface=args.tunnel, dns_servers=args.dns_server,
-                priority=args.priority,
-            )
-        elif args.operation == "verify":
-            result = {
-                "ready": helper.verify_active(
+        # Serialize root-side apply/verify/remove transactions. This closes
+        # the race where the last app exits while another gated app is joining.
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        lock_fd = os.open("/run/lock/adguard-vpn-desktop-helper.lock", flags, 0o600)
+        try:
+            metadata = os.fstat(lock_fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise HelperError("Файл блокировки helper имеет небезопасный тип.")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if args.operation == "apply":
+                result = helper.apply(
                     scope=args.scope, level=args.level, table=args.table, cgroup_path=args.cgroup,
                     tunnel_interface=args.tunnel, dns_servers=args.dns_server,
                     priority=args.priority,
                 )
-            }
-        else:
-            result = helper.remove()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        return 0
-    except HelperError as exc:
+            elif args.operation == "verify":
+                result = {
+                    "ready": helper.verify_active(
+                        scope=args.scope, level=args.level, table=args.table, cgroup_path=args.cgroup,
+                        tunnel_interface=args.tunnel, dns_servers=args.dns_server,
+                        priority=args.priority,
+                    )
+                }
+            else:
+                result = helper.remove()
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+            return 0
+        finally:
+            os.close(lock_fd)
+    except (HelperError, OSError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         return 1
 
