@@ -67,10 +67,6 @@ def save_selection(
         "custom_paths": paths,
     }
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    try:
-        os.chmod(target.parent, 0o700)
-    except OSError:
-        pass
     fd, temporary = tempfile.mkstemp(prefix=".applications-", dir=target.parent)
     try:
         os.fchmod(fd, 0o600)
