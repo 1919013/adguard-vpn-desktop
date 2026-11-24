@@ -1,0 +1,14 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: ADGuard VPN Desktop
+Source: https://github.com/1919013/adguard-vpn-desktop
+
+Files: *
+Copyright: 2026 ADGuard VPN Desktop contributors
+License: GPL-3.0-or-later
+ This program is free software: you can redistribute it and/or modify it
+ under the terms of the GNU General Public License as published by the
+ Free Software Foundation, either version 3 of the License, or (at your
+ option) any later version.
+ .
+ On Debian systems, the complete license text is available in
+ /usr/share/common-licenses/GPL-3.
