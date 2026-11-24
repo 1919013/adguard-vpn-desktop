@@ -67,7 +67,7 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             runner = FakeRunner()
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0, lambda name: "/usr/sbin/nft")
-            result = helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
+            result = helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(result["active"])
             state = json.loads((Path(tmp) / "state.json").read_text())
             self.assertEqual(state["phase"], "active")
@@ -80,7 +80,7 @@ class PrivilegedHelperTests(unittest.TestCase):
             runner = FakeRunner(fail_ip_add=True)
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0, lambda name: "/usr/sbin/nft")
             with self.assertRaises(HelperError):
-                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
+                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertFalse((Path(tmp) / "state.json").exists())
             self.assertTrue(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
 
@@ -95,7 +95,7 @@ class PrivilegedHelperTests(unittest.TestCase):
                 state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft"
             )
             with self.assertRaisesRegex(HelperError, "сохранено"):
-                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
+                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(state_path.exists())
             state = json.loads(state_path.read_text())
             self.assertEqual(state["owner"], "adguard-vpn-desktop")
@@ -116,12 +116,14 @@ class PrivilegedHelperTests(unittest.TestCase):
                 Path(tmp) / "state.json", runner, lambda: 0,
                 lambda name: "/usr/sbin/nft"
             )
-            helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
+            helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(helper.verify_active(
-                scope="adguard-vpn-firefox.scope", level=5, table=880
+                scope="adguard-vpn-firefox.scope", level=5, table=880,
+                tunnel_interface="tun0", dns_servers=["46.243.231.30"]
             ))
             self.assertFalse(helper.verify_active(
-                scope="adguard-vpn-chrome.scope", level=5, table=880
+                scope="adguard-vpn-chrome.scope", level=5, table=880,
+                tunnel_interface="tun0", dns_servers=["46.243.231.30"]
             ))
 
     def test_rejects_symlink_state_file(self):
