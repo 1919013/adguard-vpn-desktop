@@ -185,21 +185,26 @@ class SplitTunnelPrivilegedHelper:
                 "priority": priority, "cgroup_path": cgroup_path,
                 "tunnel_interface": tunnel_interface, "dns_servers": dns_servers,
             }
-            if any(existing.get(key) != value for key, value in expected.items()):
-                raise HelperError(
-                    "Уже действует другая общая сессия маршрутизации; параметры не совпадают."
-                )
-            if self.verify_active(
+            matches = all(existing.get(key) == value for key, value in expected.items())
+            if matches and self.verify_active(
                 scope=scope, level=level, table=table, cgroup_path=cgroup_path,
                 tunnel_interface=tunnel_interface, dns_servers=dns_servers,
                 mark=mark, priority=priority,
             ):
                 return {"active": True, "shared": True, "scope": scope,
                         "table": table, "mark": hex(mark), "priority": priority}
-            raise HelperError(
-                "Состояние общей сессии найдено, но правила не прошли проверку; "
-                "существующие правила не изменены."
-            )
+            old_path = existing.get("cgroup_path")
+            old_scope = existing.get("scope")
+            old_level = existing.get("level")
+            _validate_cgroup_path(old_path, old_scope, old_level)
+            if _cgroup_has_processes(old_path, self.cgroup_root):
+                raise HelperError(
+                    "Уже действует общая сессия с активными процессами, "
+                    "но её параметры или правила не совпадают; изменения запрещены."
+                )
+            # A stale policy from a previous disconnected/finished session may
+            # be reconciled only after the entire old parent cgroup is empty.
+            self.remove()
         # Refuse to adopt or overwrite any pre-existing nft table.
         if not self.which("nft"):
             raise HelperError("Команда nft не установлена или недоступна.")
