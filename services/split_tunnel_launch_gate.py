@@ -11,7 +11,6 @@ import shutil
 import socket
 import subprocess
 import tempfile
-import threading
 import time
 from pathlib import Path
 from typing import Callable, Sequence
@@ -59,7 +58,6 @@ class SplitTunnelLaunchGate:
         self.cgroup_reader = cgroup_reader
         self.scope_stopper = scope_stopper or self._stop_scope
         self.poll_interval = poll_interval
-        self._lock = threading.Lock()
 
     @staticmethod
     def _stop_scope(unit: str) -> None:
@@ -97,8 +95,6 @@ class SplitTunnelLaunchGate:
             raise LaunchGateError("Команда приложения содержит пустой аргумент.")
         if cancel_event is None:
             raise LaunchGateError("Нельзя запускать приложение без наблюдателя отключения VPN.")
-        if not self._lock.acquire(blocking=False):
-            raise LaunchGateError("Этот экземпляр запуска уже занят.")
         unit = _safe_unit_name(app_id)
         listener = None
         connection = None
@@ -241,8 +237,6 @@ class SplitTunnelLaunchGate:
                             socket_path.unlink()
                         except OSError:
                             pass
-                finally:
-                    self._lock.release()
             if cleanup_error is not None:
                 raise LaunchGateError(
                     f"Не удалось очистить правила маршрутизации: {cleanup_error}"
