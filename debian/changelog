@@ -1,0 +1,6 @@
+adguard-vpn-desktop (0.2.0) unstable; urgency=medium
+
+  * Add fail-closed per-application launch workflow.
+  * Add polkit helper and DNS egress protection.
+
+ -- ADGuard VPN Desktop contributors <noreply@example.invalid>  Tue, 24 Nov 2026 12:00:00 +0300
