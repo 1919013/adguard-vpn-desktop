@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -70,9 +71,17 @@ class SplitTunnelPrivilegedHelper:
 
     def _read_state(self) -> dict | None:
         try:
-            data = json.loads(self.state_file.read_text(encoding="utf-8"))
+            metadata = self.state_file.lstat()
         except FileNotFoundError:
             return None
+        except OSError as exc:
+            raise HelperError(f"Не удалось проверить файл состояния: {exc}") from exc
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+            raise HelperError("Файл состояния должен быть обычным файлом, не ссылкой.")
+        if metadata.st_mode & 0o077:
+            raise HelperError("Права файла состояния слишком широкие; ожидается доступ только владельцу.")
+        try:
+            data = json.loads(self.state_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise HelperError(f"Файл состояния повреждён: {exc}") from exc
         if not isinstance(data, dict) or data.get("owner") != "adguard-vpn-desktop":
@@ -81,6 +90,14 @@ class SplitTunnelPrivilegedHelper:
 
     def _write_state(self, data: dict) -> None:
         self.state_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            directory = self.state_file.parent.lstat()
+        except OSError as exc:
+            raise HelperError(f"Не удалось проверить каталог состояния: {exc}") from exc
+        if not stat.S_ISDIR(directory.st_mode) or stat.S_ISLNK(directory.st_mode):
+            raise HelperError("Каталог состояния не должен быть символической ссылкой.")
+        if directory.st_mode & 0o077:
+            raise HelperError("Каталог состояния доступен посторонним; требуются права 0700.")
         fd, temporary = tempfile.mkstemp(prefix=".split-tunnel-", dir=self.state_file.parent)
         try:
             os.fchmod(fd, 0o600)
