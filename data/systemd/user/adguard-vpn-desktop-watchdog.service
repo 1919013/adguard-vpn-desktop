@@ -9,7 +9,6 @@ WorkingDirectory=/usr/lib/adguard-vpn-desktop
 ExecStart=/usr/bin/python3 -m services.split_tunnel_watchdog
 Restart=always
 RestartSec=1
-NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
