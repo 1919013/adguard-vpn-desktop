@@ -103,6 +103,37 @@ class SplitTunnelRuntime:
                 return True
         return False
 
+    @staticmethod
+    def _ensure_independent_watchdog() -> None:
+        """Start the user-systemd watchdog before any protected process is released."""
+        systemctl = shutil.which("systemctl")
+        if not systemctl:
+            raise SplitTunnelRuntimeError(
+                "Не найден systemctl: независимый watchdog не может быть запущен."
+            )
+        try:
+            started = subprocess.run(
+                [systemctl, "--user", "start", "adguard-vpn-desktop-watchdog.service"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, timeout=15, check=False,
+            )
+            active = subprocess.run(
+                [systemctl, "--user", "is-active", "--quiet",
+                 "adguard-vpn-desktop-watchdog.service"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=8, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SplitTunnelRuntimeError(
+                f"Не удалось запустить независимый watchdog: {exc}"
+            ) from exc
+        if started.returncode != 0 or active.returncode != 0:
+            detail = (started.stdout or "").strip()
+            raise SplitTunnelRuntimeError(
+                "Независимый watchdog systemd не активен; защищённое приложение не запущено. "
+                + detail
+            )
+
     def launch(self, application) -> int:
         if self._already_running(application):
             raise SplitTunnelRuntimeError(
@@ -139,6 +170,8 @@ class SplitTunnelRuntime:
                 "Нельзя безопасно создать правила: таблица nftables уже существует "
                 "или nft недоступен; существующая таблица не была изменена."
             )
+
+        self._ensure_independent_watchdog()
 
         watch = self.watcher.start(snapshot.tunnel_interface)
         if watch.cancel_event.is_set():
