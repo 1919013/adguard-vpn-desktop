@@ -221,22 +221,21 @@ class SplitTunnelLaunchGate:
                     except Exception as exc:
                         cleanup_error = exc
             finally:
-                try:
-                    if connection is not None:
-                        try:
-                            connection.close()
-                        except OSError:
-                            pass
-                    if listener is not None:
-                        try:
-                            listener.close()
-                        except OSError:
-                            pass
-                    if socket_path is not None:
-                        try:
-                            socket_path.unlink()
-                        except OSError:
-                            pass
+                if connection is not None:
+                    try:
+                        connection.close()
+                    except OSError:
+                        pass
+                if listener is not None:
+                    try:
+                        listener.close()
+                    except OSError:
+                        pass
+                if socket_path is not None:
+                    try:
+                        socket_path.unlink()
+                    except OSError:
+                        pass
             if cleanup_error is not None:
                 raise LaunchGateError(
                     f"Не удалось очистить правила маршрутизации: {cleanup_error}"
