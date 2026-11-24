@@ -70,7 +70,7 @@ class SplitTunnelWatchdog:
         """Stop only scopes with our fixed prefix; never stop app.slice globally."""
         safe = [
             name for name in scopes
-            if re.fullmatch(r"adguard-vpn-[A-Za-z0-9_.@-]+\\.scope", name)
+            if re.fullmatch(r"adguard-vpn-[A-Za-z0-9_.@-]+\.scope", name)
         ]
         if not safe:
             return True
