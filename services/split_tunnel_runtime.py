@@ -112,6 +112,18 @@ class SplitTunnelRuntime:
                 "Не найден systemctl: независимый watchdog не может быть запущен."
             )
         try:
+            # A package upgrade may have installed or replaced the unit since
+            # the user manager last loaded its unit files.
+            reloaded = subprocess.run(
+                [systemctl, "--user", "daemon-reload"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, timeout=15, check=False,
+            )
+            if reloaded.returncode != 0:
+                raise SplitTunnelRuntimeError(
+                    "Не удалось обновить список пользовательских systemd-служб: "
+                    + (reloaded.stdout or "").strip()
+                )
             started = subprocess.run(
                 [systemctl, "--user", "start", "adguard-vpn-desktop-watchdog.service"],
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
