@@ -1,10 +1,10 @@
 """GTK application catalog for the split-tunneling workflow.
 
-The current view discovers applications and stores a temporary selection.
-It does not yet claim to route their traffic through the VPN.
+The selected list is persisted locally, but is not yet applied to VPN routing.
 """
 from __future__ import annotations
 
+from services.application_selection import load_selection, save_selection
 from services.desktop_applications import (
     custom_application_from_path,
     discover_applications,
@@ -25,9 +25,9 @@ def build_applications_tab():
     root.pack_start(title, False, False, 0)
 
     note = Gtk.Label(
-        label=("Каталог программ Debian и Flatpak. Отметки пока являются предварительным "
-               "выбором: раздельная маршрутизация будет включена после завершения проверок "
-               "DNS, polkit и запуска приложений в отдельных systemd scope."),
+        label=("Каталог программ Debian и Flatpak. Выбор сохраняется между запусками "
+               "программы, но пока не меняет маршрутизацию. Раздельный туннель будет "
+               "включён после завершения проверок DNS, polkit и запуска приложений."),
         xalign=0,
     )
     note.set_line_wrap(True)
@@ -65,12 +65,20 @@ def build_applications_tab():
     root.pack_start(summary, False, False, 0)
     applications = []
     selected = set()
+    custom_paths = set()
+
+    def persist():
+        try:
+            save_selection(selected, custom_paths)
+        except (OSError, ValueError) as exc:
+            summary.set_text("Не удалось сохранить выбор приложений: " + str(exc))
 
     def on_toggle(widget, desktop_id):
         if widget.get_active():
             selected.add(desktop_id)
         else:
             selected.discard(desktop_id)
+        persist()
         summary.set_text(f"Найдено: {len(applications)} · Выбрано: {len(selected)}")
 
     def render(*_):
@@ -80,7 +88,7 @@ def build_applications_tab():
         for app in visible:
             details = "Flatpak" if app.flatpak else "Системное приложение"
             if app.dbus_activatable:
-                details += " · D-Bus activation (нужно перезапустить приложение)"
+                details += " · D-Bus activation (пока не поддерживается)"
             check = Gtk.CheckButton(label=f"{app.name} — {details}\n{app.desktop_id}")
             check.set_active(app.desktop_id in selected)
             check.connect("toggled", on_toggle, app.desktop_id)
@@ -95,31 +103,52 @@ def build_applications_tab():
     def load(*_):
         nonlocal applications
         try:
-            applications = discover_applications()
-            selected.intersection_update({app.desktop_id for app in applications})
+            saved = load_selection()
+            custom_paths.clear()
+            custom_paths.update(saved["custom_paths"])
+            discovered = discover_applications()
+            custom_apps = []
+            valid_custom_paths = set()
+            for path in sorted(custom_paths):
+                try:
+                    custom_apps.append(custom_application_from_path(path))
+                    valid_custom_paths.add(path)
+                except Exception:
+                    continue
+            custom_paths.intersection_update(valid_custom_paths)
+            applications = discovered + custom_apps
+            applications.sort(key=lambda item: (item.name.casefold(), item.desktop_id.casefold()))
+            known_ids = {app.desktop_id for app in applications}
+            selected.clear()
+            selected.update(saved["selected_ids"] & known_ids)
+            if custom_paths != set(saved["custom_paths"]):
+                persist()
             render()
         except Exception as exc:
-            summary.set_text("Не удалось прочитать каталог приложений: " + str(exc))
+            summary.set_text("Не удалось загрузить каталог или сохранённый выбор: " + str(exc))
 
     def add_custom_path(*_):
-        nonlocal applications
         try:
             app = custom_application_from_path(custom_path.get_text())
-            applications = [item for item in applications if item.desktop_id != app.desktop_id]
+            applications[:] = [item for item in applications if item.desktop_id != app.desktop_id]
             applications.append(app)
             applications.sort(key=lambda item: (item.name.casefold(), item.desktop_id.casefold()))
+            custom_paths.add(app.source)
             selected.add(app.desktop_id)
             custom_path.set_text("")
+            persist()
             render()
         except Exception as exc:
             summary.set_text("Не удалось добавить приложение: " + str(exc))
 
     def choose_all(*_):
         selected.update(app.desktop_id for app in filter_applications(applications, search.get_text()))
+        persist()
         render()
 
     def clear_selection(*_):
         selected.clear()
+        persist()
         render()
 
     search.connect("search-changed", render)
