@@ -1,0 +1,2 @@
+/usr/libexec/adguard-vpn-desktop-helper tools/adguard-vpn-desktop-helper
+/usr/share/polkit-1/actions/org.adguard-vpn-desktop.policy data/polkit-1/actions/org.adguard-vpn-desktop.policy
