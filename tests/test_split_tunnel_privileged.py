@@ -159,7 +159,7 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", FakeRunner(), lambda: 1000)
             with self.assertRaises(HelperError):
-                helper.apply(scope="test.scope", level=5, table=880)
+                helper.apply(scope="test.scope", level=5, table=880, tunnel_interface="tun0", dns_servers=["46.243.231.30"])
 
     def test_remove_reconstructs_commands_from_owned_state(self):
         with tempfile.TemporaryDirectory() as tmp:
