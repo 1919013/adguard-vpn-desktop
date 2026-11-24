@@ -51,7 +51,10 @@ def _validate_cgroup_path(cgroup_path: str, scope: str, level: int) -> tuple[str
         len(parts) != level or not parts or parts[0] != "user.slice"
         or parts[-1] != scope or any(part in {".", ".."} for part in parts)
         or not scope.endswith(".slice")
-        or len(parts) < 2 or parts[-2] != "app.slice"
+        or len(parts) != 5
+        or not re.fullmatch(r"user-[0-9]+\\.slice", parts[1])
+        or not re.fullmatch(r"user@[0-9]+\\.service", parts[2])
+        or parts[3] != "app.slice"
         or scope != "app-adguard-vpn.slice"
     ):
         raise HelperError("Путь cgroup v2 должен указывать на общую app-adguard-vpn.slice.")
