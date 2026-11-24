@@ -120,7 +120,7 @@ def build_applications_tab():
             applications.sort(key=lambda item: (item.name.casefold(), item.desktop_id.casefold()))
             known_ids = {app.desktop_id for app in applications}
             selected.clear()
-            selected.update(saved["selected_ids"] & known_ids)
+            selected.update(set(saved["selected_ids"]) & known_ids)
             if custom_paths != set(saved["custom_paths"]):
                 persist()
             render()
