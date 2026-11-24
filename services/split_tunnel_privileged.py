@@ -176,6 +176,10 @@ class SplitTunnelPrivilegedHelper:
         for server in dns_servers:
             family = "ip6" if ":" in server else "ip"
             for protocol in ("udp", "tcp"):
+                nft_lines.insert(
+                    3,
+                    f"add rule inet {NFT_TABLE} {NFT_CHAIN} {family} daddr {server} {protocol} dport 53 meta mark set {hex(mark)}"
+                )
                 nft_lines.append(
                     f'add rule inet {NFT_TABLE} app_guard {family} daddr {server} {protocol} dport 53 oifname != "{tunnel_interface}" drop'
                 )
@@ -247,8 +251,16 @@ class SplitTunnelPrivilegedHelper:
             f"socket cgroupv2 level {level} {scope} "
             f"meta mark set {hex(mark)}"
         )
-        if expected_rule not in " ".join(nft_text.split()):
+        compact_output = " ".join(nft_text.split())
+        if expected_rule not in compact_output:
             return False
+        for server in dns_servers:
+            family = "ip6" if ":" in server else "ip"
+            if any(
+                f"{family} daddr {server} {protocol} dport 53 meta mark set {hex(mark)}" not in compact_output
+                for protocol in ("udp", "tcp")
+            ):
+                return False
 
         code, guard_text = _run(
             ["nft", "list", "chain", "inet", NFT_TABLE, "app_guard"],
