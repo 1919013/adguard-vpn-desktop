@@ -11,9 +11,10 @@ from services.split_tunnel_privileged import (
 
 
 class FakeRunner:
-    def __init__(self, fail_ip_add=False):
+    def __init__(self, fail_ip_add=False, initial_rules=None):
         self.calls = []
         self.fail_ip_add = fail_ip_add
+        self.rules = list(initial_rules or [{"priority": 0, "table": "local"}])
 
     def __call__(self, argv, **kwargs):
         self.calls.append((list(argv), kwargs.get("input")))
@@ -21,10 +22,24 @@ class FakeRunner:
             return SimpleNamespace(returncode=0, stdout="")
         if argv[:3] == ["nft", "list", "table"]:
             return SimpleNamespace(returncode=0, stdout='table inet adguard_vpn_desktop { comment "Owned by ADGuard VPN Desktop"; }')
-        if argv[:3] == ["ip", "-j", "rule"]:
-            return SimpleNamespace(returncode=0, stdout='[{"priority":0,"table":"local"}]')
+        if argv[:4] == ["ip", "-j", "rule", "show"]:
+            return SimpleNamespace(returncode=0, stdout=json.dumps(self.rules))
         if argv[:3] == ["ip", "rule", "add"] and self.fail_ip_add:
             return SimpleNamespace(returncode=2, stdout="simulated failure")
+        if argv[:3] == ["ip", "rule", "add"]:
+            self.rules.append({"priority": int(argv[4]), "fwmark": argv[6], "table": argv[8]})
+            return SimpleNamespace(returncode=0, stdout="")
+        if argv[:3] == ["ip", "rule", "del"]:
+            priority, mark, table = argv[4], argv[6], argv[8]
+            self.rules = [
+                rule for rule in self.rules
+                if not (
+                    str(rule.get("priority")) == priority
+                    and str(rule.get("fwmark")) == mark
+                    and str(rule.get("table")) == table
+                )
+            ]
+            return SimpleNamespace(returncode=0, stdout="")
         return SimpleNamespace(returncode=0, stdout="")
 
 
@@ -70,7 +85,10 @@ class PrivilegedHelperTests(unittest.TestCase):
                 "level": 5, "table": 880, "mark": 0xAD61,
                 "priority": 1061, "phase": "active",
             }))
-            runner = FakeRunner()
+            runner = FakeRunner(initial_rules=[
+                {"priority": 0, "table": "local"},
+                {"priority": 1061, "fwmark": "0xad61", "table": "880"},
+            ])
             helper = SplitTunnelPrivilegedHelper(state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft")
             result = helper.remove()
             self.assertTrue(result["removed"])
