@@ -1,6 +1,7 @@
 """Orchestrate fail-closed application launch, VPN monitoring and DNS checks."""
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -84,7 +85,7 @@ class SplitTunnelRuntime:
         except OSError:
             return True
         for entry in entries:
-            if not entry.name.isdigit() or int(entry.name) == __import__("os").getpid():
+            if not entry.name.isdigit() or int(entry.name) == os.getpid():
                 continue
             try:
                 raw = (entry / "cmdline").read_bytes()
@@ -152,6 +153,7 @@ class SplitTunnelRuntime:
                     "scope": scope, "level": level,
                     "table": plan.route_table, "priority": plan.rule_priority,
                 })
+                policy["apply_attempted"] = True
                 self.helper.apply(
                     scope=scope, level=level, table=plan.route_table,
                     tunnel=snapshot.tunnel_interface,
@@ -168,7 +170,8 @@ class SplitTunnelRuntime:
                 )
 
             def remove_rules():
-                self.helper.remove()
+                if policy.get("apply_attempted"):
+                    self.helper.remove()
 
             return self.gate.run(
                 application.exec_argv, application.desktop_id,
