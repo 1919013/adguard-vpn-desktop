@@ -211,5 +211,40 @@ class PrivilegedHelperTests(unittest.TestCase):
             self.assertFalse(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
 
 
+    def test_remove_keeps_firewall_guards_while_scope_has_processes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cgroup_path = "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope"
+            cgroup_dir = root.joinpath(*[part for part in cgroup_path.split("/") if part])
+            cgroup_dir.mkdir(parents=True)
+            process_file = cgroup_dir / "cgroup.procs"
+            process_file.write_text("123\\n")
+            state_path = root / "state.json"
+            state_path.write_text(json.dumps({
+                "owner": "adguard-vpn-desktop", "scope": "test.scope",
+                "level": 5, "table": 880, "cgroup_path": cgroup_path,
+                "mark": 0xAD61, "priority": 1061, "phase": "active",
+            }))
+            state_path.chmod(0o600)
+            runner = FakeRunner(initial_rules=[
+                {"priority": 0, "table": "local"},
+                {"priority": 1061, "fwmark": "0xad61", "table": "880"},
+            ])
+            helper = SplitTunnelPrivilegedHelper(
+                state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft",
+                cgroup_root=root,
+            )
+            with self.assertRaisesRegex(HelperError, "ещё содержит процессы"):
+                helper.remove()
+            self.assertTrue(state_path.exists())
+            self.assertFalse(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
+
+            process_file.write_text("")
+            result = helper.remove()
+            self.assertTrue(result["removed"])
+            self.assertFalse(state_path.exists())
+
+
+
 if __name__ == "__main__":
     unittest.main()
