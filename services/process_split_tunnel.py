@@ -133,17 +133,21 @@ def cgroup_v2_id(cgroup_path: str, cgroup_root: Path = CGROUP_ROOT) -> int:
 
 
 def nft_cgroup_mark_rule(cgroup_path: str, mark: int = DEFAULT_MARK) -> list[str]:
-    """Build an nft socket-cgroupv2 rule for a dedicated systemd scope.
+    """Build a cgroup-v2 match for the shared ADGuard application slice.
 
-    Plain meta cgroup matches legacy net_cls class IDs, not cgroup-v2 IDs.
-    For cgroup v2 nftables provides socket cgroupv2 level N NAME.
+    Every protected app scope is a descendant of this slice, so one kernel
+    policy covers concurrent applications and survives individual exits.
     """
     parts = [part for part in cgroup_path.split("/") if part]
     if not parts or ".." in parts or not cgroup_path.startswith("/"):
         raise SplitTunnelError("Некорректный путь cgroup v2.")
     scope_name = parts[-1]
-    if not scope_name.endswith(".scope") or not re.fullmatch(r"[A-Za-z0-9_.@:-]+", scope_name):
-        raise SplitTunnelError("Путь не указывает на безопасное имя systemd scope.")
+    if (
+        scope_name != "app-adguard-vpn.slice" or len(parts) < 2
+        or parts[-2] != "app.slice"
+        or not re.fullmatch(r"[A-Za-z0-9_.@:-]+", scope_name)
+    ):
+        raise SplitTunnelError("Путь должен указывать на общую app-adguard-vpn.slice.")
     if not isinstance(mark, int) or not 0 < mark <= 0xFFFFFFFF:
         raise SplitTunnelError("Некорректная метка пакета.")
     return [
