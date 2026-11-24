@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 HELPER_PATH = Path("/usr/libexec/adguard-vpn-desktop-helper")
-SCOPE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+\.scope$")
+SCOPE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+\.slice$")
 
 
 class PolkitSplitTunnelError(RuntimeError):
