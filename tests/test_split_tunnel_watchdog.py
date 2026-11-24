@@ -60,7 +60,7 @@ class WatchdogTests(unittest.TestCase):
             "systemctl", "--user", "stop", "adguard-vpn-good.scope"
         ]])
 
-    def test_cleanup_is_retried_after_temporary_polkit_failure(self):
+    def test_cleanup_is_retried_when_helper_defers_for_remaining_processes(self):
         from unittest.mock import patch
 
         class Runner:
@@ -76,7 +76,11 @@ class WatchdogTests(unittest.TestCase):
                     return FakeResult(0, "")
                 if argv and argv[0] == "pkexec":
                     self.remove_calls += 1
-                    return FakeResult(1 if self.remove_calls == 1 else 0, "")
+                    if self.remove_calls == 1:
+                        return FakeResult(
+                            0, '{"active": true, "removed": false, "deferred": true}'
+                        )
+                    return FakeResult(0, '{"active": false, "removed": true}')
                 return FakeResult(0, "")
 
         runner = Runner()
