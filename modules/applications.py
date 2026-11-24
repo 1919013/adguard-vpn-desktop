@@ -130,10 +130,19 @@ def build_applications_tab():
             details = "Flatpak" if app.flatpak else "Системное приложение"
             if app.dbus_activatable:
                 details += " · D-Bus activation (пока не поддерживается)"
-            check = Gtk.CheckButton(label=f"{app.name} — {details}\n{app.desktop_id}")
+            line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            check = Gtk.CheckButton(label=f"{app.name} — {details}\\n{app.desktop_id}")
             check.set_active(app.desktop_id in selected)
             check.connect("toggled", on_toggle, app.desktop_id)
-            rows.pack_start(check, False, False, 0)
+            line.pack_start(check, True, True, 0)
+            launch_button = Gtk.Button(label="Запустить через VPN")
+            launch_button.connect("clicked", lambda _button, item=app: launch_application(item))
+            launch_button.set_sensitive(app.desktop_id in selected and not launching and not app.dbus_activatable)
+            if app.dbus_activatable:
+                launch_button.set_tooltip_text("D-Bus activation пока не поддерживается")
+            launch_controls[app.desktop_id] = launch_button
+            line.pack_start(launch_button, False, False, 0)
+            rows.pack_start(line, False, False, 0)
         if not visible:
             rows.pack_start(Gtk.Label(label="Приложения не найдены.", xalign=0), False, False, 0)
         rows.show_all()
