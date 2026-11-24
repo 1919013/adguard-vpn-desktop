@@ -4,4 +4,5 @@
 
 override_dh_fixperms:
 	dh_fixperms
+	chmod 0755 debian/adguard-vpn-desktop/usr/bin/adguard-vpn-desktop
 	chmod 0755 debian/adguard-vpn-desktop/usr/libexec/adguard-vpn-desktop-helper
