@@ -88,7 +88,7 @@ def build_scoped_launch_command(
     unit = _safe_unit_name(app_id)
     return [
         systemd_run, "--user", "--scope", "--collect",
-        "--unit", unit, "--slice", "app.slice", "--",
+        "--unit", unit, "--slice", "app-adguard-vpn.slice", "--",
         *command,
     ]
 
