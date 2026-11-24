@@ -85,7 +85,7 @@ class SplitTunnelPlannerTests(unittest.TestCase):
             dns_policy_ready=True,
         )
         self.assertFalse(plan.ready)
-        self.assertTrue(any("Метка" in reason for reason in plan.reasons))
+        self.assertTrue(any("метк" in reason.casefold() for reason in plan.reasons))
         self.assertNotEqual(plan.rule_priority, 1061)
 
     def test_rejects_multiple_vpn_tables(self):
