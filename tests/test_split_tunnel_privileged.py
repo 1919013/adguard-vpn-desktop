@@ -80,6 +80,31 @@ class PrivilegedHelperTests(unittest.TestCase):
             self.assertIn('ip daddr 46.243.231.30 tcp dport 53 oifname != "tun0" drop', nft_call[1])
             self.assertTrue(any(call[0][:3] == ["ip", "rule", "add"] for call in runner.calls))
 
+    def test_second_application_reuses_existing_shared_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = FakeRunner()
+            helper = SplitTunnelPrivilegedHelper(
+                Path(tmp) / "state.json", runner, lambda: 0,
+                lambda name: "/usr/sbin/nft",
+            )
+            kwargs = dict(
+                scope="app-adguard-vpn.slice", level=5, table=880,
+                cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
+                tunnel_interface="tun0", dns_servers=["46.243.231.30"],
+            )
+            first = helper.apply(**kwargs)
+            second = helper.apply(**kwargs)
+            self.assertTrue(first["active"])
+            self.assertTrue(second["shared"])
+            self.assertEqual(
+                sum(1 for call in runner.calls if call[0][:2] == ["nft", "-f"]),
+                1,
+            )
+            self.assertEqual(
+                sum(1 for call in runner.calls if call[0][:3] == ["ip", "rule", "add"]),
+                1,
+            )
+
     def test_rolls_back_nft_if_ip_rule_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner = FakeRunner(fail_ip_add=True)
