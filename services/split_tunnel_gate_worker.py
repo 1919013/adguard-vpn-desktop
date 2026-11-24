@@ -22,15 +22,15 @@ def main(argv=None) -> int:
         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         client.settimeout(20)
         client.connect(args.socket)
-        client.sendall((json.dumps({"pid": os.getpid()}) + "\\n").encode("utf-8"))
+        client.sendall((json.dumps({"pid": os.getpid()}) + "\n").encode("utf-8"))
         response = b""
-        while not response.endswith(b"\\n") and len(response) < 32:
+        while not response.endswith(b"\n") and len(response) < 32:
             chunk = client.recv(32 - len(response))
             if not chunk:
                 break
             response += chunk
         client.close()
-        if response != b"GO\\n":
+        if response != b"GO\n":
             return 125
         os.execvpe(command[0], command, os.environ.copy())
     except (OSError, ValueError):
