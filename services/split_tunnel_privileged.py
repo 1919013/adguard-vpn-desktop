@@ -22,7 +22,7 @@ STATE_DIR = Path("/var/lib/adguard-vpn-desktop")
 STATE_FILE = STATE_DIR / "split-tunnel.json"
 NFT_TABLE = "adguard_vpn_desktop"
 NFT_CHAIN = "app_output"
-SCOPE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+\.scope$")
+SCOPE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+\.(?:scope|slice)$")
 DEFAULT_MARK = 0xAD61
 
 
@@ -49,8 +49,11 @@ def _validate_cgroup_path(cgroup_path: str, scope: str, level: int) -> tuple[str
     if (
         len(parts) != level or not parts or parts[0] != "user.slice"
         or parts[-1] != scope or any(part in {".", ".."} for part in parts)
+        or not scope.endswith(".slice")
+        or len(parts) < 2 or parts[-2] != "app.slice"
+        or scope != "app-adguard-vpn.slice"
     ):
-        raise HelperError("Путь cgroup v2 не соответствует уровню и имени scope.")
+        raise HelperError("Путь cgroup v2 должен указывать на общую app-adguard-vpn.slice.")
     if any(not re.fullmatch(r"[A-Za-z0-9_.@:-]+", part) for part in parts):
         raise HelperError("Путь cgroup v2 содержит недопустимые компоненты.")
     return parts
@@ -171,8 +174,28 @@ class SplitTunnelPrivilegedHelper:
             raise HelperError("Список DNS-серверов содержит некорректный IP-адрес.") from exc
         if not dns_servers:
             raise HelperError("Для DNS-защиты требуется хотя бы один проверенный DNS-сервер.")
-        if self._read_state() is not None:
-            raise HelperError("Уже существует состояние раздельной маршрутизации; сначала выполните remove.")
+        existing = self._read_state()
+        if existing is not None:
+            expected = {
+                "scope": scope, "level": level, "table": table, "mark": mark,
+                "priority": priority, "cgroup_path": cgroup_path,
+                "tunnel_interface": tunnel_interface, "dns_servers": dns_servers,
+            }
+            if any(existing.get(key) != value for key, value in expected.items()):
+                raise HelperError(
+                    "Уже действует другая общая сессия маршрутизации; параметры не совпадают."
+                )
+            if self.verify_active(
+                scope=scope, level=level, table=table, cgroup_path=cgroup_path,
+                tunnel_interface=tunnel_interface, dns_servers=dns_servers,
+                mark=mark, priority=priority,
+            ):
+                return {"active": True, "shared": True, "scope": scope,
+                        "table": table, "mark": hex(mark), "priority": priority}
+            raise HelperError(
+                "Состояние общей сессии найдено, но правила не прошли проверку; "
+                "существующие правила не изменены."
+            )
         # Refuse to adopt or overwrite any pre-existing nft table.
         if not self.which("nft"):
             raise HelperError("Команда nft не установлена или недоступна.")
@@ -280,6 +303,7 @@ class SplitTunnelPrivilegedHelper:
         expected = {
             "scope": scope, "level": level, "table": table,
             "mark": mark, "priority": priority,
+            "cgroup_path": cgroup_path,
             "tunnel_interface": tunnel_interface, "dns_servers": dns_servers,
         }
         if state is None or any(state.get(key) != value for key, value in expected.items()):
@@ -375,9 +399,10 @@ class SplitTunnelPrivilegedHelper:
         cgroup_path = state.get("cgroup_path")
         _validate_cgroup_path(cgroup_path, state["scope"], state["level"])
         if _cgroup_has_processes(cgroup_path, self.cgroup_root):
-            raise HelperError(
-                "Защищённый scope ещё содержит процессы; правила оставлены для предотвращения утечки."
-            )
+            return {
+                "active": True, "removed": False, "deferred": True,
+                "reason": "Общая cgroup ещё содержит защищённые процессы.",
+            }
         ip_delete = ["ip", "rule", "del", "priority", str(state["priority"]),
                      "fwmark", hex(state["mark"]), "lookup", str(state["table"])]
         # Inspect policy rules first. Never discard state while an owned rule
