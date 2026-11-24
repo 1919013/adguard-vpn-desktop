@@ -121,9 +121,19 @@ class SplitTunnelRuntime:
             )
         table_absent = self._nft_table_is_absent()
         if not table_absent:
+            # Recover only state owned by this helper. If ownership cannot be
+            # proven, leave the table untouched and refuse to launch.
+            try:
+                self.helper.remove()
+            except Exception as exc:
+                raise SplitTunnelRuntimeError(
+                    "Не удалось безопасно очистить оставшиеся правила ADGuard VPN Desktop: " + str(exc)
+                ) from exc
+            table_absent = self._nft_table_is_absent()
+        if not table_absent:
             raise SplitTunnelRuntimeError(
                 "Нельзя безопасно создать правила: таблица nftables уже существует "
-                "или nft недоступен."
+                "или nft недоступен; существующая таблица не была изменена."
             )
 
         watch = self.watcher.start(snapshot.tunnel_interface)
