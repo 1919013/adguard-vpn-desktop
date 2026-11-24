@@ -11,10 +11,12 @@ from services.split_tunnel_privileged import (
 
 
 class FakeRunner:
-    def __init__(self, fail_ip_add=False, fail_ip_delete=False, initial_rules=None):
+    def __init__(self, fail_ip_add=False, fail_ip_delete=False,
+                 partial_ip_add=False, initial_rules=None):
         self.calls = []
         self.fail_ip_add = fail_ip_add
         self.fail_ip_delete = fail_ip_delete
+        self.partial_ip_add = partial_ip_add
         self.rules = list(initial_rules or [{"priority": 0, "table": "local"}])
 
     def __call__(self, argv, **kwargs):
@@ -26,6 +28,8 @@ class FakeRunner:
         if argv[:4] == ["ip", "-j", "rule", "show"]:
             return SimpleNamespace(returncode=0, stdout=json.dumps(self.rules))
         if argv[:3] == ["ip", "rule", "add"] and self.fail_ip_add:
+            if self.partial_ip_add:
+                self.rules.append({"priority": int(argv[4]), "fwmark": argv[6], "table": argv[8]})
             return SimpleNamespace(returncode=2, stdout="simulated failure")
         if argv[:3] == ["ip", "rule", "add"]:
             self.rules.append({"priority": int(argv[4]), "fwmark": argv[6], "table": argv[8]})
@@ -73,6 +77,29 @@ class PrivilegedHelperTests(unittest.TestCase):
                 helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
             self.assertFalse((Path(tmp) / "state.json").exists())
             self.assertTrue(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
+
+
+    def test_partial_ip_add_failure_retains_recovery_state_if_cleanup_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "state.json"
+            runner = FakeRunner(
+                fail_ip_add=True, fail_ip_delete=True, partial_ip_add=True,
+            )
+            helper = SplitTunnelPrivilegedHelper(
+                state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft"
+            )
+            with self.assertRaisesRegex(HelperError, "сохранено"):
+                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
+            self.assertTrue(state_path.exists())
+            state = json.loads(state_path.read_text())
+            self.assertEqual(state["owner"], "adguard-vpn-desktop")
+            self.assertTrue(any(
+                rule.get("priority") == 1061 and rule.get("fwmark") == "0xad61"
+                for rule in runner.rules
+            ))
+            self.assertFalse(any(
+                call[0][:3] == ["nft", "delete", "table"] for call in runner.calls
+            ))
 
     def test_refuses_non_root(self):
         with tempfile.TemporaryDirectory() as tmp:
