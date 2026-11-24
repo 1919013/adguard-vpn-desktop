@@ -124,10 +124,12 @@ class PrivilegedHelperTests(unittest.TestCase):
             helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(helper.verify_active(
                 scope="adguard-vpn-firefox.scope", level=5, table=880,
+                cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope",
                 tunnel_interface="tun0", dns_servers=["46.243.231.30"]
             ))
             self.assertFalse(helper.verify_active(
                 scope="adguard-vpn-chrome.scope", level=5, table=880,
+                cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-chrome.scope",
                 tunnel_interface="tun0", dns_servers=["46.243.231.30"]
             ))
 
