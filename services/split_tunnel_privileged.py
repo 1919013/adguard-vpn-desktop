@@ -7,6 +7,7 @@ It is not wired into the GUI until packaging and polkit policy are reviewed.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -116,10 +117,19 @@ class SplitTunnelPrivilegedHelper:
                 pass
 
     def apply(self, *, scope: str, level: int, table: int,
+              tunnel_interface: str, dns_servers: list[str] | tuple[str, ...],
               mark: int = DEFAULT_MARK, priority: int = 1061) -> dict:
         if self.euid() != 0:
             raise HelperError("Для изменения nftables и ip rule нужны права root.")
         _validate(scope, level, table, mark, priority)
+        if not isinstance(tunnel_interface, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", tunnel_interface):
+            raise HelperError("Недопустимое имя TUN-интерфейса.")
+        try:
+            dns_servers = sorted({str(ipaddress.ip_address(item)) for item in dns_servers})
+        except (TypeError, ValueError) as exc:
+            raise HelperError("Список DNS-серверов содержит некорректный IP-адрес.") from exc
+        if not dns_servers:
+            raise HelperError("Для DNS-защиты требуется хотя бы один проверенный DNS-сервер.")
         if self._read_state() is not None:
             raise HelperError("Уже существует состояние раздельной маршрутизации; сначала выполните remove.")
         # Refuse to adopt or overwrite any pre-existing nft table.
@@ -170,6 +180,7 @@ class SplitTunnelPrivilegedHelper:
         state = {
             "owner": "adguard-vpn-desktop", "scope": scope, "level": level,
             "table": table, "mark": mark, "priority": priority,
+            "tunnel_interface": tunnel_interface, "dns_servers": dns_servers,
             "ip_rule": ip_add, "phase": "intent",
         }
         self._write_state(state)
@@ -200,15 +211,21 @@ class SplitTunnelPrivilegedHelper:
 
 
     def verify_active(self, *, scope: str, level: int, table: int,
+                      tunnel_interface: str, dns_servers: list[str] | tuple[str, ...],
                       mark: int = DEFAULT_MARK, priority: int = 1061) -> bool:
         """Independently verify the exact live nftables and ip rule objects."""
         if self.euid() != 0:
             raise HelperError("Проверка привилегированных правил выполняется через root helper.")
         _validate(scope, level, table, mark, priority)
         state = self._read_state()
+        try:
+            dns_servers = sorted({str(ipaddress.ip_address(item)) for item in dns_servers})
+        except (TypeError, ValueError):
+            return False
         expected = {
             "scope": scope, "level": level, "table": table,
             "mark": mark, "priority": priority,
+            "tunnel_interface": tunnel_interface, "dns_servers": dns_servers,
         }
         if state is None or any(state.get(key) != value for key, value in expected.items()):
             return False
@@ -225,6 +242,23 @@ class SplitTunnelPrivilegedHelper:
         )
         if expected_rule not in " ".join(nft_text.split()):
             return False
+
+        code, guard_text = _run(
+            ["nft", "list", "chain", "inet", NFT_TABLE, "app_guard"],
+            runner=self.runner,
+        )
+        if code:
+            return False
+        compact_guard = " ".join(guard_text.split())
+        if f'meta mark {hex(mark)} oifname != "{tunnel_interface}" drop' not in compact_guard:
+            return False
+        for server in dns_servers:
+            family = "ip6" if ":" in server else "ip"
+            if any(
+                f'{family} daddr {server} {protocol} dport 53 oifname != "{tunnel_interface}" drop' not in compact_guard
+                for protocol in ("udp", "tcp")
+            ):
+                return False
 
         code, rules_text = _run(["ip", "-j", "rule", "show"], runner=self.runner)
         if code:
@@ -330,18 +364,25 @@ def main(argv=None) -> int:
         command.add_argument("--scope", required=True)
         command.add_argument("--level", required=True, type=int)
         command.add_argument("--table", required=True, type=int)
+        command.add_argument("--tunnel", required=True)
+        command.add_argument("--dns-server", action="append", required=True)
+        command.add_argument("--priority", type=int, default=1061)
     sub.add_parser("remove")
     args = parser.parse_args(argv)
     helper = SplitTunnelPrivilegedHelper()
     try:
         if args.operation == "apply":
             result = helper.apply(
-                scope=args.scope, level=args.level, table=args.table
+                scope=args.scope, level=args.level, table=args.table,
+                tunnel_interface=args.tunnel, dns_servers=args.dns_server,
+                priority=args.priority,
             )
         elif args.operation == "verify":
             result = {
                 "ready": helper.verify_active(
-                    scope=args.scope, level=args.level, table=args.table
+                    scope=args.scope, level=args.level, table=args.table,
+                    tunnel_interface=args.tunnel, dns_servers=args.dns_server,
+                    priority=args.priority,
                 )
             }
         else:
