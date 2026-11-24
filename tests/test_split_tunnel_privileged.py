@@ -101,6 +101,36 @@ class PrivilegedHelperTests(unittest.TestCase):
                 call[0][:3] == ["nft", "delete", "table"] for call in runner.calls
             ))
 
+
+    def test_rejects_symlink_state_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target.json"
+            target.write_text(json.dumps({"owner": "adguard-vpn-desktop"}))
+            link = root / "state.json"
+            link.symlink_to(target)
+            helper = SplitTunnelPrivilegedHelper(link, FakeRunner(), lambda: 0)
+            with self.assertRaisesRegex(HelperError, "ссылкой"):
+                helper._read_state()
+
+    def test_rejects_world_accessible_state_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state.json"
+            state.write_text(json.dumps({"owner": "adguard-vpn-desktop"}))
+            state.chmod(0o644)
+            helper = SplitTunnelPrivilegedHelper(state, FakeRunner(), lambda: 0)
+            with self.assertRaisesRegex(HelperError, "Права файла"):
+                helper._read_state()
+
+    def test_refuses_insecure_state_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "state"
+            root.mkdir(mode=0o777)
+            root.chmod(0o755)
+            helper = SplitTunnelPrivilegedHelper(root / "state.json", FakeRunner(), lambda: 0)
+            with self.assertRaisesRegex(HelperError, "доступен посторонним"):
+                helper._write_state({"owner": "adguard-vpn-desktop"})
+
     def test_refuses_non_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", FakeRunner(), lambda: 1000)
