@@ -197,6 +197,63 @@ class SplitTunnelPrivilegedHelper:
             raise HelperError(f"Транзакция не выполнена; откат проверен: {exc}") from exc
         return {"active": True, "scope": scope, "table": table, "mark": hex(mark), "priority": priority}
 
+
+    def verify_active(self, *, scope: str, level: int, table: int,
+                      mark: int = DEFAULT_MARK, priority: int = 1061) -> bool:
+        """Independently verify the exact live nftables and ip rule objects."""
+        if self.euid() != 0:
+            raise HelperError("Проверка привилегированных правил выполняется через root helper.")
+        _validate(scope, level, table, mark, priority)
+        state = self._read_state()
+        expected = {
+            "scope": scope, "level": level, "table": table,
+            "mark": mark, "priority": priority,
+        }
+        if state is None or any(state.get(key) != value for key, value in expected.items()):
+            return False
+
+        code, nft_text = _run(
+            ["nft", "list", "chain", "inet", NFT_TABLE, NFT_CHAIN],
+            runner=self.runner,
+        )
+        if code:
+            return False
+        expected_rule = (
+            f"socket cgroupv2 level {level} {scope} "
+            f"meta mark set {hex(mark)}"
+        )
+        if expected_rule not in " ".join(nft_text.split()):
+            return False
+
+        code, rules_text = _run(["ip", "-j", "rule", "show"], runner=self.runner)
+        if code:
+            return False
+        try:
+            rules = json.loads(rules_text or "[]")
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(rules, list):
+            return False
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            try:
+                raw_mark = str(rule.get("fwmark", ""))
+                mark_text, _, mask_text = raw_mark.partition("/")
+                rule_mark = int(mark_text, 0)
+                rule_mask = int(mask_text, 0) if mask_text else 0xFFFFFFFF
+                rule_table = str(rule.get("table", rule.get("lookup", "")))
+                if (
+                    str(rule.get("priority", "")) == str(priority)
+                    and rule_mark == mark
+                    and rule_mask == 0xFFFFFFFF
+                    and rule_table == str(table)
+                ):
+                    return True
+            except (TypeError, ValueError):
+                continue
+        return False
+
     def remove(self) -> dict:
         if self.euid() != 0:
             raise HelperError("Для изменения nftables и ip rule нужны права root.")

@@ -18,9 +18,15 @@ class FakeRunner:
         self.fail_ip_delete = fail_ip_delete
         self.partial_ip_add = partial_ip_add
         self.rules = list(initial_rules or [{"priority": 0, "table": "local"}])
+        self.nft_rules = ""
 
     def __call__(self, argv, **kwargs):
         self.calls.append((list(argv), kwargs.get("input")))
+        if argv[:2] == ["nft", "-f"]:
+            self.nft_rules = kwargs.get("input") or ""
+            return SimpleNamespace(returncode=0, stdout="")
+        if argv[:5] == ["nft", "list", "chain", "inet", "adguard_vpn_desktop"]:
+            return SimpleNamespace(returncode=0, stdout=self.nft_rules)
         if argv[:3] == ["nft", "list", "tables"]:
             return SimpleNamespace(returncode=0, stdout="")
         if argv[:3] == ["nft", "list", "table"]:
@@ -101,6 +107,22 @@ class PrivilegedHelperTests(unittest.TestCase):
                 call[0][:3] == ["nft", "delete", "table"] for call in runner.calls
             ))
 
+
+
+    def test_verify_active_checks_exact_live_nft_and_ip_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = FakeRunner()
+            helper = SplitTunnelPrivilegedHelper(
+                Path(tmp) / "state.json", runner, lambda: 0,
+                lambda name: "/usr/sbin/nft"
+            )
+            helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880)
+            self.assertTrue(helper.verify_active(
+                scope="adguard-vpn-firefox.scope", level=5, table=880
+            ))
+            self.assertFalse(helper.verify_active(
+                scope="adguard-vpn-chrome.scope", level=5, table=880
+            ))
 
     def test_rejects_symlink_state_file(self):
         with tempfile.TemporaryDirectory() as tmp:
