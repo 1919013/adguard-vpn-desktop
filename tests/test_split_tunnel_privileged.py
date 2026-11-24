@@ -73,6 +73,9 @@ class PrivilegedHelperTests(unittest.TestCase):
             self.assertEqual(state["phase"], "active")
             nft_call = next(call for call in runner.calls if call[0][:2] == ["nft", "-f"])
             self.assertIn("socket cgroupv2 level 5 adguard-vpn-firefox.scope", nft_call[1])
+            self.assertIn('meta mark 0xad61 oifname != "tun0" drop', nft_call[1])
+            self.assertIn('ip daddr 46.243.231.30 udp dport 53 oifname != "tun0" drop', nft_call[1])
+            self.assertIn('ip daddr 46.243.231.30 tcp dport 53 oifname != "tun0" drop', nft_call[1])
             self.assertTrue(any(call[0][:3] == ["ip", "rule", "add"] for call in runner.calls))
 
     def test_rolls_back_nft_if_ip_rule_fails(self):
