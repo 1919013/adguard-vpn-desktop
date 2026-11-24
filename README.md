@@ -16,7 +16,7 @@ Open-source GTK desktop interface for **AdGuard VPN CLI** on Linux. This is a co
 
 ## Important limitations
 
-- Only **one protected application at a time** is currently supported. Concurrent Chrome and Telegram sessions need a shared routing-session/refcount design.
+- Protected applications now join one shared `app-adguard-vpn.slice`, each in a separate systemd scope. A single nftables/ip-rule policy marks sockets at the parent cgroup; later launches verify and reuse that policy. Cleanup is deferred while any protected process remains in the shared cgroup. Concurrent Chrome + Telegram is now implemented in the launch architecture but still requires CI and live Debian 13 validation.
 - D-Bus-activatable applications and already-running instances are refused to avoid forwarding requests to processes outside the protected cgroup.
 - Local DNS stub resolvers such as systemd-resolved/dnsmasq are refused until their upstream servers can be verified safely.
 - The VPN watcher polls CLI status. If the GUI supervisor remains alive, it terminates the app on disconnect; kernel egress guards remain as the fail-closed backstop if the TUN route disappears.

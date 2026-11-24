@@ -11,7 +11,6 @@ import shutil
 import socket
 import subprocess
 import tempfile
-import threading
 import time
 from pathlib import Path
 from typing import Callable, Sequence
@@ -41,7 +40,7 @@ def _apply_verify_release(cgroup: str, apply_rules: Callable,
 
 
 class SplitTunnelLaunchGate:
-    """Run one application in a gated systemd scope.
+    """Run an application in its own gated scope under one shared policy slice.
 
     apply_rules(cgroup) must install rules through the narrow privileged
     helper. verify_rules(cgroup) must inspect live nftables and ip rules and
@@ -59,7 +58,6 @@ class SplitTunnelLaunchGate:
         self.cgroup_reader = cgroup_reader
         self.scope_stopper = scope_stopper or self._stop_scope
         self.poll_interval = poll_interval
-        self._lock = threading.Lock()
 
     @staticmethod
     def _stop_scope(unit: str) -> None:
@@ -97,8 +95,6 @@ class SplitTunnelLaunchGate:
             raise LaunchGateError("Команда приложения содержит пустой аргумент.")
         if cancel_event is None:
             raise LaunchGateError("Нельзя запускать приложение без наблюдателя отключения VPN.")
-        if not self._lock.acquire(blocking=False):
-            raise LaunchGateError("Другой процесс уже использует общий набор правил маршрутизации.")
         unit = _safe_unit_name(app_id)
         listener = None
         connection = None
@@ -126,7 +122,7 @@ class SplitTunnelLaunchGate:
             ]
             argv = [
                 "systemd-run", "--user", "--scope", "--wait", "--collect",
-                "--unit", unit, "--slice", "app.slice", "--", *worker,
+                "--unit", unit, "--slice", "app-adguard-vpn.slice", "--", *worker,
             ]
             process = self.popen(
                 argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -156,8 +152,13 @@ class SplitTunnelLaunchGate:
             if not isinstance(pid, int) or pid <= 0:
                 raise LaunchGateError("Процесс блокировки передал некорректный PID.")
             cgroup = self.cgroup_reader(pid)
-            if not cgroup.endswith("/" + unit):
-                raise LaunchGateError("Процесс приложения оказался не в ожидаемом systemd scope.")
+            if not cgroup.endswith("/app-adguard-vpn.slice/" + unit):
+                raise LaunchGateError(
+                    "Процесс приложения оказался вне общей app-adguard-vpn.slice."
+                )
+            policy_cgroup = cgroup.rsplit("/", 1)[0]
+            if not policy_cgroup.endswith("/app.slice/app-adguard-vpn.slice"):
+                raise LaunchGateError("Не удалось подтвердить родительскую cgroup общей сессии.")
 
             def release():
                 nonlocal released
@@ -170,7 +171,7 @@ class SplitTunnelLaunchGate:
             # Mark that cleanup is required before attempting the transaction:
             # a privileged helper may fail after a partial kernel change.
             applied = True
-            _apply_verify_release(cgroup, apply_rules, verify_rules, release, abort)
+            _apply_verify_release(policy_cgroup, apply_rules, verify_rules, release, abort)
             stream.close()
             connection.close()
             connection = None
@@ -220,24 +221,21 @@ class SplitTunnelLaunchGate:
                     except Exception as exc:
                         cleanup_error = exc
             finally:
-                try:
-                    if connection is not None:
-                        try:
-                            connection.close()
-                        except OSError:
-                            pass
-                    if listener is not None:
-                        try:
-                            listener.close()
-                        except OSError:
-                            pass
-                    if socket_path is not None:
-                        try:
-                            socket_path.unlink()
-                        except OSError:
-                            pass
-                finally:
-                    self._lock.release()
+                if connection is not None:
+                    try:
+                        connection.close()
+                    except OSError:
+                        pass
+                if listener is not None:
+                    try:
+                        listener.close()
+                    except OSError:
+                        pass
+                if socket_path is not None:
+                    try:
+                        socket_path.unlink()
+                    except OSError:
+                        pass
             if cleanup_error is not None:
                 raise LaunchGateError(
                     f"Не удалось очистить правила маршрутизации: {cleanup_error}"

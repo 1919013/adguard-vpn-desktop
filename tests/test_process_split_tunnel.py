@@ -19,7 +19,7 @@ class SplitTunnelPrimitiveTests(unittest.TestCase):
         self.assertEqual(
             build_scoped_launch_command(["/usr/bin/firefox", "--new-window"], "org.mozilla.firefox"),
             ["systemd-run", "--user", "--scope", "--collect", "--unit",
-             "adguard-vpn-org.mozilla.firefox.scope", "--slice", "app.slice", "--",
+             "adguard-vpn-org.mozilla.firefox.scope", "--slice", "app-adguard-vpn.slice", "--",
              "/usr/bin/firefox", "--new-window"],
         )
 
@@ -67,9 +67,9 @@ class SplitTunnelPrimitiveTests(unittest.TestCase):
 
     def test_builds_nft_and_ip_rule_commands(self):
         self.assertEqual(
-            nft_cgroup_mark_rule("/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope"),
+            nft_cgroup_mark_rule("/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice"),
             ["nft", "add", "rule", "inet", "adguard_vpn_desktop", "app_output",
-             "socket", "cgroupv2", "level", "5", "adguard-vpn-firefox.scope",
+             "socket", "cgroupv2", "level", "5", "app-adguard-vpn.slice",
              "meta", "mark", "set", "0xad61"],
         )
         self.assertEqual(

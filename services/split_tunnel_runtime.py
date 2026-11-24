@@ -103,6 +103,49 @@ class SplitTunnelRuntime:
                 return True
         return False
 
+    @staticmethod
+    def _ensure_independent_watchdog() -> None:
+        """Start the user-systemd watchdog before any protected process is released."""
+        systemctl = shutil.which("systemctl")
+        if not systemctl:
+            raise SplitTunnelRuntimeError(
+                "Не найден systemctl: независимый watchdog не может быть запущен."
+            )
+        try:
+            # A package upgrade may have installed or replaced the unit since
+            # the user manager last loaded its unit files.
+            reloaded = subprocess.run(
+                [systemctl, "--user", "daemon-reload"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, timeout=15, check=False,
+            )
+            if reloaded.returncode != 0:
+                raise SplitTunnelRuntimeError(
+                    "Не удалось обновить список пользовательских systemd-служб: "
+                    + (reloaded.stdout or "").strip()
+                )
+            started = subprocess.run(
+                [systemctl, "--user", "start", "adguard-vpn-desktop-watchdog.service"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, timeout=15, check=False,
+            )
+            active = subprocess.run(
+                [systemctl, "--user", "is-active", "--quiet",
+                 "adguard-vpn-desktop-watchdog.service"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=8, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SplitTunnelRuntimeError(
+                f"Не удалось запустить независимый watchdog: {exc}"
+            ) from exc
+        if started.returncode != 0 or active.returncode != 0:
+            detail = (started.stdout or "").strip()
+            raise SplitTunnelRuntimeError(
+                "Независимый watchdog systemd не активен; защищённое приложение не запущено. "
+                + detail
+            )
+
     def launch(self, application) -> int:
         if self._already_running(application):
             raise SplitTunnelRuntimeError(
@@ -123,22 +166,12 @@ class SplitTunnelRuntime:
                 "DNS-защита не подтверждена; приложение не будет запущено:\n- "
                 + "\n- ".join(dns["reasons"])
             )
-        table_absent = self._nft_table_is_absent()
-        if not table_absent:
-            # Recover only state owned by this helper. If ownership cannot be
-            # proven, leave the table untouched and refuse to launch.
-            try:
-                self.helper.remove()
-            except Exception as exc:
-                raise SplitTunnelRuntimeError(
-                    "Не удалось безопасно очистить оставшиеся правила ADGuard VPN Desktop: " + str(exc)
-                ) from exc
-            table_absent = self._nft_table_is_absent()
-        if not table_absent:
-            raise SplitTunnelRuntimeError(
-                "Нельзя безопасно создать правила: таблица nftables уже существует "
-                "или nft недоступен; существующая таблица не была изменена."
-            )
+        # The privileged helper owns collision detection. It creates the
+        # table once, then verifies and reuses the exact same policy for every
+        # application in the shared parent slice.
+        table_absent = True
+
+        self._ensure_independent_watchdog()
 
         watch = self.watcher.start(snapshot.tunnel_interface)
         if watch.cancel_event.is_set():
@@ -149,8 +182,13 @@ class SplitTunnelRuntime:
         try:
             def apply_rules(cgroup_path: str):
                 parts = [part for part in cgroup_path.split("/") if part]
-                if not parts:
-                    raise SplitTunnelRuntimeError("Пустой путь cgroup v2.")
+                if (
+                    not parts or parts[-1] != "app-adguard-vpn.slice"
+                    or len(parts) < 2 or parts[-2] != "app.slice"
+                ):
+                    raise SplitTunnelRuntimeError(
+                        "Процесс не находится в общей app-adguard-vpn.slice."
+                    )
                 plan = build_split_tunnel_plan(
                     snapshot, cgroup_path,
                     routing_mode=config["routing_mode"],
@@ -186,6 +224,8 @@ class SplitTunnelRuntime:
 
             def remove_rules():
                 if policy.get("apply_attempted"):
+                    # The root helper checks the entire shared parent cgroup.
+                    # It defers removal while any other protected app remains.
                     self.helper.remove()
 
             return self.gate.run(

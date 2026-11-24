@@ -1,0 +1,5 @@
+[Unit]
+Description=ADGuard VPN Desktop shared protected-app routing slice
+Documentation=https://github.com/1919013/adguard-vpn-desktop
+
+[Slice]

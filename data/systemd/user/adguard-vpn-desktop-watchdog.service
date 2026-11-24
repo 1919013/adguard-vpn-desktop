@@ -1,0 +1,20 @@
+[Unit]
+Description=ADGuard VPN Desktop protected-app watchdog
+Documentation=https://github.com/1919013/adguard-vpn-desktop
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/lib/adguard-vpn-desktop
+ExecStart=/usr/bin/python3 -m services.split_tunnel_watchdog
+Restart=always
+RestartSec=1
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/adguard-vpn-desktop /run/lock
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+LockPersonality=yes
+
+[Install]
+WantedBy=default.target

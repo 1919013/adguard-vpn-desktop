@@ -67,12 +67,12 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             runner = FakeRunner()
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0, lambda name: "/usr/sbin/nft")
-            result = helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+            result = helper.apply(scope="app-adguard-vpn.slice", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(result["active"])
             state = json.loads((Path(tmp) / "state.json").read_text())
             self.assertEqual(state["phase"], "active")
             nft_call = next(call for call in runner.calls if call[0][:2] == ["nft", "-f"])
-            self.assertIn("socket cgroupv2 level 5 adguard-vpn-firefox.scope", nft_call[1])
+            self.assertIn("socket cgroupv2 level 5 app-adguard-vpn.slice", nft_call[1])
             self.assertIn("ip daddr 46.243.231.30 udp dport 53 meta mark set 0xad61", nft_call[1])
             self.assertIn("ip daddr 46.243.231.30 tcp dport 53 meta mark set 0xad61", nft_call[1])
             self.assertIn('meta mark 0xad61 oifname != "tun0" drop', nft_call[1])
@@ -80,12 +80,37 @@ class PrivilegedHelperTests(unittest.TestCase):
             self.assertIn('ip daddr 46.243.231.30 tcp dport 53 oifname != "tun0" drop', nft_call[1])
             self.assertTrue(any(call[0][:3] == ["ip", "rule", "add"] for call in runner.calls))
 
+    def test_second_application_reuses_existing_shared_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = FakeRunner()
+            helper = SplitTunnelPrivilegedHelper(
+                Path(tmp) / "state.json", runner, lambda: 0,
+                lambda name: "/usr/sbin/nft",
+            )
+            kwargs = dict(
+                scope="app-adguard-vpn.slice", level=5, table=880,
+                cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
+                tunnel_interface="tun0", dns_servers=["46.243.231.30"],
+            )
+            first = helper.apply(**kwargs)
+            second = helper.apply(**kwargs)
+            self.assertTrue(first["active"])
+            self.assertTrue(second["shared"])
+            self.assertEqual(
+                sum(1 for call in runner.calls if call[0][:2] == ["nft", "-f"]),
+                1,
+            )
+            self.assertEqual(
+                sum(1 for call in runner.calls if call[0][:3] == ["ip", "rule", "add"]),
+                1,
+            )
+
     def test_rolls_back_nft_if_ip_rule_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner = FakeRunner(fail_ip_add=True)
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", runner, lambda: 0, lambda name: "/usr/sbin/nft")
             with self.assertRaises(HelperError):
-                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+                helper.apply(scope="app-adguard-vpn.slice", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertFalse((Path(tmp) / "state.json").exists())
             self.assertTrue(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
 
@@ -100,7 +125,7 @@ class PrivilegedHelperTests(unittest.TestCase):
                 state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft"
             )
             with self.assertRaisesRegex(HelperError, "сохранено"):
-                helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+                helper.apply(scope="app-adguard-vpn.slice", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(state_path.exists())
             state = json.loads(state_path.read_text())
             self.assertEqual(state["owner"], "adguard-vpn-desktop")
@@ -121,15 +146,15 @@ class PrivilegedHelperTests(unittest.TestCase):
                 Path(tmp) / "state.json", runner, lambda: 0,
                 lambda name: "/usr/sbin/nft"
             )
-            helper.apply(scope="adguard-vpn-firefox.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+            helper.apply(scope="app-adguard-vpn.slice", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
             self.assertTrue(helper.verify_active(
-                scope="adguard-vpn-firefox.scope", level=5, table=880,
-                cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope",
+                scope="app-adguard-vpn.slice", level=5, table=880,
+                cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
                 tunnel_interface="tun0", dns_servers=["46.243.231.30"]
             ))
             self.assertFalse(helper.verify_active(
-                scope="adguard-vpn-chrome.scope", level=5, table=880,
-                cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-chrome.scope",
+                scope="app-adguard-vpn.slice", level=5, table=881,
+                cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
                 tunnel_interface="tun0", dns_servers=["46.243.231.30"]
             ))
 
@@ -166,14 +191,14 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             helper = SplitTunnelPrivilegedHelper(Path(tmp) / "state.json", FakeRunner(), lambda: 1000)
             with self.assertRaises(HelperError):
-                helper.apply(scope="test.scope", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
+                helper.apply(scope="app-adguard-vpn.slice", level=5, table=880, cgroup_path="/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", tunnel_interface="tun0", dns_servers=["46.243.231.30"])
 
     def test_remove_reconstructs_commands_from_owned_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             state_path = Path(tmp) / "state.json"
             state_path.write_text(json.dumps({
-                "owner": "adguard-vpn-desktop", "scope": "test.scope",
-                "level": 5, "table": 880, "cgroup_path": "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope", "mark": 0xAD61,
+                "owner": "adguard-vpn-desktop", "scope": "app-adguard-vpn.slice",
+                "level": 5, "table": 880, "cgroup_path": "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", "mark": 0xAD61,
                 "priority": 1061, "phase": "active",
             }))
             state_path.chmod(0o600)
@@ -193,8 +218,8 @@ class PrivilegedHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             state_path = Path(tmp) / "state.json"
             state_path.write_text(json.dumps({
-                "owner": "adguard-vpn-desktop", "scope": "test.scope",
-                "level": 5, "table": 880, "cgroup_path": "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope", "mark": 0xAD61,
+                "owner": "adguard-vpn-desktop", "scope": "app-adguard-vpn.slice",
+                "level": 5, "table": 880, "cgroup_path": "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice", "mark": 0xAD61,
                 "priority": 1061, "phase": "active",
             }))
             runner = FakeRunner(
@@ -214,14 +239,16 @@ class PrivilegedHelperTests(unittest.TestCase):
     def test_remove_keeps_firewall_guards_while_scope_has_processes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            cgroup_path = "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope"
+            cgroup_path = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice"
             cgroup_dir = root.joinpath(*[part for part in cgroup_path.split("/") if part])
             cgroup_dir.mkdir(parents=True)
-            process_file = cgroup_dir / "cgroup.procs"
+            child_scope = cgroup_dir / "adguard-vpn-chrome.scope"
+            child_scope.mkdir()
+            process_file = child_scope / "cgroup.procs"
             process_file.write_text("123\n")
             state_path = root / "state.json"
             state_path.write_text(json.dumps({
-                "owner": "adguard-vpn-desktop", "scope": "test.scope",
+                "owner": "adguard-vpn-desktop", "scope": "app-adguard-vpn.slice",
                 "level": 5, "table": 880, "cgroup_path": cgroup_path,
                 "mark": 0xAD61, "priority": 1061, "phase": "active",
             }))
@@ -234,8 +261,8 @@ class PrivilegedHelperTests(unittest.TestCase):
                 state_path, runner, lambda: 0, lambda name: "/usr/sbin/nft",
                 cgroup_root=root,
             )
-            with self.assertRaisesRegex(HelperError, "ещё содержит процессы"):
-                helper.remove()
+            deferred = helper.remove()
+            self.assertTrue(deferred["deferred"])
             self.assertTrue(state_path.exists())
             self.assertFalse(any(call[0][:3] == ["nft", "delete", "table"] for call in runner.calls))
 

@@ -21,7 +21,7 @@ class SplitTunnelPlannerTests(unittest.TestCase):
     def test_fails_closed_without_script_and_dns_policy(self):
         plan = build_split_tunnel_plan(
             snapshot(),
-            "/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope",
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
             routing_mode="AUTO",
         )
         self.assertFalse(plan.ready)
@@ -32,14 +32,14 @@ class SplitTunnelPlannerTests(unittest.TestCase):
     def test_builds_transaction_only_when_all_safety_gates_pass(self):
         plan = build_split_tunnel_plan(
             snapshot(),
-            "/user.slice/user-1000.slice/user@1000.service/app.slice/adguard-vpn-firefox.scope",
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
             routing_mode="SCRIPT",
             dns_policy_ready=True,
             nft_table_absent=True,
         )
         self.assertTrue(plan.ready)
         self.assertIn("type route hook output priority mangle", plan.nft_batch)
-        self.assertIn("socket cgroupv2 level 5 adguard-vpn-firefox.scope", plan.nft_batch)
+        self.assertIn("socket cgroupv2 level 5 app-adguard-vpn.slice", plan.nft_batch)
         self.assertEqual(plan.route_table, 880)
         self.assertIn("lookup 880", " ".join(plan.ip_rule_add))
         self.assertIn("del", plan.ip_rule_delete)
@@ -57,7 +57,7 @@ class SplitTunnelPlannerTests(unittest.TestCase):
         )
         plan = build_split_tunnel_plan(
             incomplete,
-            "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope",
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
             routing_mode="SCRIPT",
             dns_policy_ready=True,
             nft_table_absent=True,
@@ -65,9 +65,9 @@ class SplitTunnelPlannerTests(unittest.TestCase):
         self.assertFalse(plan.ready)
         self.assertTrue(any("IPv6" in reason for reason in plan.reasons))
 
-    def test_avoids_existing_rule_priority_and_mark_collision(self):
+    def test_reuses_existing_owned_rule_for_shared_apps(self):
         base = snapshot()
-        conflict = RoutingSnapshot(
+        active = RoutingSnapshot(
             connected=base.connected,
             tunnel_interface=base.tunnel_interface,
             vpn_tables=base.vpn_tables,
@@ -79,14 +79,28 @@ class SplitTunnelPlannerTests(unittest.TestCase):
             warnings=(),
         )
         plan = build_split_tunnel_plan(
+            active,
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
+            routing_mode="SCRIPT", dns_policy_ready=True, nft_table_absent=True,
+        )
+        self.assertTrue(plan.ready)
+        self.assertEqual(plan.rule_priority, 1061)
+
+    def test_refuses_foreign_rule_using_same_mark(self):
+        base = snapshot()
+        conflict = RoutingSnapshot(
+            connected=base.connected, tunnel_interface=base.tunnel_interface,
+            vpn_tables=base.vpn_tables, ipv4_routes=base.ipv4_routes,
+            ipv6_routes=base.ipv6_routes,
+            rules=base.rules + ({"priority": 1061, "fwmark": "0xad61", "table": 881},),
+            warnings=(),
+        )
+        plan = build_split_tunnel_plan(
             conflict,
-            "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope",
-            routing_mode="SCRIPT",
-            dns_policy_ready=True,
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
+            routing_mode="SCRIPT", dns_policy_ready=True, nft_table_absent=True,
         )
         self.assertFalse(plan.ready)
-        self.assertTrue(any("метк" in reason.casefold() for reason in plan.reasons))
-        self.assertNotEqual(plan.rule_priority, 1061)
 
 
     def test_requires_both_families_in_the_same_selected_vpn_table(self):
@@ -102,7 +116,7 @@ class SplitTunnelPlannerTests(unittest.TestCase):
         )
         plan = build_split_tunnel_plan(
             split_tables,
-            "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope",
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
             routing_mode="SCRIPT",
             dns_policy_ready=True,
             nft_table_absent=True,
@@ -124,7 +138,7 @@ class SplitTunnelPlannerTests(unittest.TestCase):
         )
         plan = build_split_tunnel_plan(
             missing_table,
-            "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope",
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
             routing_mode="SCRIPT",
             dns_policy_ready=True,
             nft_table_absent=True,
@@ -145,7 +159,7 @@ class SplitTunnelPlannerTests(unittest.TestCase):
         )
         plan = build_split_tunnel_plan(
             ambiguous,
-            "/user.slice/user-1000.slice/user@1000.service/app.slice/test.scope",
+            "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice",
             routing_mode="SCRIPT",
             dns_policy_ready=True,
         )
