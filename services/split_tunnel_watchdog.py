@@ -90,12 +90,19 @@ class SplitTunnelWatchdog:
 
     def run_forever(self) -> int:
         expected_tunnel = None
+        previously_had_scopes = False
         while True:
             scopes = self.protected_scopes()
             if not scopes:
+                if previously_had_scopes:
+                    # Also reconcile a normal application exit after the GUI
+                    # has crashed before running its own cleanup callback.
+                    self.remove_owned_policy()
+                previously_had_scopes = False
                 expected_tunnel = None
                 time.sleep(self.interval)
                 continue
+            previously_had_scopes = True
 
             current_tunnel = active_tunnel(self.cli_runner)
             if expected_tunnel is None:
