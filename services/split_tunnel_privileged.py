@@ -56,8 +56,8 @@ def _validate_cgroup_path(cgroup_path: str, scope: str, level: int) -> tuple[str
     return parts
 
 
-def _cgroup_has_processes(cgroup_path: str) -> bool:
-    root = Path("/sys/fs/cgroup")
+def _cgroup_has_processes(cgroup_path: str, cgroup_root: Path = Path("/sys/fs/cgroup")) -> bool:
+    root = Path(cgroup_root)
     target = root.joinpath(*_validate_cgroup_path(
         cgroup_path, Path(cgroup_path).name, len([p for p in cgroup_path.split("/") if p])
     ))
@@ -98,11 +98,13 @@ class SplitTunnelPrivilegedHelper:
 
     def __init__(self, state_file: Path = STATE_FILE, runner: Callable = subprocess.run,
                  euid: Callable[[], int] = os.geteuid,
-                 which: Callable[[str], str | None] = shutil.which):
+                 which: Callable[[str], str | None] = shutil.which,
+                 cgroup_root: Path = Path("/sys/fs/cgroup")):
         self.state_file = Path(state_file)
         self.runner = runner
         self.euid = euid
         self.which = which
+        self.cgroup_root = Path(cgroup_root)
 
     def _exec(self, argv: list[str], input_text: str | None = None) -> None:
         code, output = _run(argv, input_text=input_text, runner=self.runner)
@@ -372,7 +374,7 @@ class SplitTunnelPrivilegedHelper:
                   state.get("mark"), state.get("priority"))
         cgroup_path = state.get("cgroup_path")
         _validate_cgroup_path(cgroup_path, state["scope"], state["level"])
-        if _cgroup_has_processes(cgroup_path):
+        if _cgroup_has_processes(cgroup_path, self.cgroup_root):
             raise HelperError(
                 "Защищённый scope ещё содержит процессы; правила оставлены для предотвращения утечки."
             )
