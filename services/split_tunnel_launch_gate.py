@@ -206,12 +206,11 @@ class SplitTunnelLaunchGate:
                 try:
                     remove_rules()
                 except Exception as exc:
-                    # Preserve this error: caller must surface it and must not
-                    # claim cleanup succeeded.
-                    if process is not None and process.poll() is not None:
-                        raise LaunchGateError(
-                            f"Не удалось очистить правила после завершения приложения: {exc}"
-                        ) from exc
+                    # Cleanup failure is always surfaced; never report a safe
+                    # end state when kernel routing objects may still exist.
+                    raise LaunchGateError(
+                        f"Не удалось очистить правила маршрутизации: {exc}"
+                    ) from exc
             if connection is not None:
                 connection.close()
             if listener is not None:
