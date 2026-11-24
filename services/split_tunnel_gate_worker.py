@@ -20,7 +20,7 @@ def main(argv=None) -> int:
         return 125
     try:
         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.settimeout(20)
+        client.settimeout(120)
         client.connect(args.socket)
         client.sendall((json.dumps({"pid": os.getpid()}) + "\n").encode("utf-8"))
         response = b""
