@@ -10,3 +10,4 @@ tools/adguard-vpn-desktop-helper usr/libexec
 data/polkit-1/actions/org.adguard-vpn-desktop.policy usr/share/polkit-1/actions
 adguard-vpn-desktop.desktop usr/share/applications
 data/systemd/user/adguard-vpn-desktop-watchdog.service usr/lib/systemd/user
+data/systemd/user/app-adguard-vpn.slice usr/lib/systemd/user
