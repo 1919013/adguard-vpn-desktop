@@ -74,9 +74,11 @@ def _exec_argv(value: str) -> tuple[str, ...]:
         return ()
     cleaned: list[str] = []
     for token in raw:
+        # Remove supported desktop-entry field codes before rejecting unknown
+        # codes; otherwise valid %f/%F/%u/%U placeholders are misclassified.
+        token = FIELD_CODE.sub("", token)
         if INVALID_FIELD.search(token):
             return ()
-        token = FIELD_CODE.sub("", token)
         if token:
             cleaned.append(token)
     return tuple(cleaned)
