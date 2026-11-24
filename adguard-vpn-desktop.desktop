@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ADGuard VPN Desktop
+Comment=Community graphical interface for AdGuard VPN CLI
+Exec=adguard-vpn-desktop
+Icon=network-vpn
+Terminal=false
+Categories=Network;Utility;
+StartupNotify=true
