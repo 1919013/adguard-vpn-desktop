@@ -242,7 +242,9 @@ class PrivilegedHelperTests(unittest.TestCase):
             cgroup_path = "/user.slice/user-1000.slice/user@1000.service/app.slice/app-adguard-vpn.slice"
             cgroup_dir = root.joinpath(*[part for part in cgroup_path.split("/") if part])
             cgroup_dir.mkdir(parents=True)
-            process_file = cgroup_dir / "cgroup.procs"
+            child_scope = cgroup_dir / "adguard-vpn-chrome.scope"
+            child_scope.mkdir()
+            process_file = child_scope / "cgroup.procs"
             process_file.write_text("123\n")
             state_path = root / "state.json"
             state_path.write_text(json.dumps({
