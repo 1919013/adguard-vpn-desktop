@@ -73,13 +73,25 @@ class TemporaryDNSHelper:
 
     def _locked(self):
         self.state_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        directory = self.state_file.parent.lstat()
+        if (not stat.S_ISDIR(directory.st_mode) or stat.S_ISLNK(directory.st_mode)
+                or directory.st_uid != self.uid()):
+            raise DNSHelperError("Каталог системного состояния DNS имеет небезопасный тип или владельца.")
         os.chmod(self.state_file.parent, 0o700)
-        fd = os.open(self.lock_file, os.O_CREAT | os.O_RDWR, 0o600)
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(self.lock_file, flags, 0o600)
         try:
+            metadata = os.fstat(fd)
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != self.uid()):
+                raise DNSHelperError("Файл блокировки DNS имеет небезопасный тип или владельца.")
+            os.fchmod(fd, 0o600)
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             os.close(fd)
             raise DNSHelperError("Уже выполняется операция временной настройки DNS.") from exc
+        except Exception:
+            os.close(fd)
+            raise
         return fd
 
     def _write_state(self, state):
@@ -109,17 +121,26 @@ class TemporaryDNSHelper:
                 pass
 
     def _read_state(self):
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         try:
-            metadata = self.state_file.lstat()
+            fd = os.open(self.state_file, flags)
         except FileNotFoundError:
             return None
-        if (not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)
-                or metadata.st_uid != self.uid() or stat.S_IMODE(metadata.st_mode) != 0o600):
-            raise DNSHelperError("Файл состояния DNS имеет небезопасного владельца, тип или права.")
+        except OSError as exc:
+            raise DNSHelperError(f"Не удалось безопасно открыть файл состояния DNS: {exc}") from exc
         try:
-            state = json.loads(self.state_file.read_text(encoding="utf-8"))
+            metadata = os.fstat(fd)
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != self.uid()
+                    or stat.S_IMODE(metadata.st_mode) != 0o600):
+                raise DNSHelperError("Файл состояния DNS имеет небезопасного владельца, тип или права.")
+            with os.fdopen(fd, "r", encoding="utf-8") as stream:
+                fd = -1
+                state = json.load(stream)
         except (OSError, json.JSONDecodeError) as exc:
             raise DNSHelperError(f"Файл состояния DNS повреждён: {exc}") from exc
+        finally:
+            if fd >= 0:
+                os.close(fd)
         if (not isinstance(state, dict) or state.get("owner") != OWNER
                 or state.get("version") != 1
                 or not isinstance(state.get("devices"), list)):
