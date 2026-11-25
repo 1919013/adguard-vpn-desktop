@@ -107,7 +107,7 @@ class DNSManager:
         if code:
             raise DNSManagerError(f"Cannot list NetworkManager profiles: {output}")
         return {
-            line.replace(r"\\:", ":").strip()
+            line.replace(r"\:", ":").strip()
             for line in output.splitlines()
             if line.strip()
         }
