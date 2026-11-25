@@ -143,8 +143,11 @@ class TemporaryDNSHelper:
                 os.close(fd)
         if (not isinstance(state, dict) or state.get("owner") != OWNER
                 or state.get("version") != 1
+                or state.get("phase") not in ("applying", "active")
+                or not isinstance(state.get("modified_devices"), list)
                 or not isinstance(state.get("devices"), list)):
             raise DNSHelperError("Формат или владелец состояния DNS не распознан.")
+        valid_names = set()
         for item in state["devices"]:
             if (not isinstance(item, dict)
                     or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", str(item.get("ifname", "")))
@@ -152,6 +155,7 @@ class TemporaryDNSHelper:
                     or not isinstance(item.get("original_dns"), list)
                     or not isinstance(item.get("applied_dns"), list)):
                 raise DNSHelperError("Состояние DNS содержит недопустимое устройство.")
+            valid_names.add(item["ifname"])
             try:
                 for address in item["original_dns"] + item["applied_dns"]:
                     ipaddress.ip_address(address)
@@ -275,6 +279,8 @@ class TemporaryDNSHelper:
                 "owner": OWNER, "version": 1, "tunnel": tunnel,
                 "dns_servers": list(servers),
                 "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip(),
+                "phase": "applying",
+                "modified_devices": [],
                 "devices": [
                     {
                         "ifname": x["ifname"],
@@ -288,46 +294,8 @@ class TemporaryDNSHelper:
             self._write_state(state)
             attempted = []
             try:
-                for item in state["devices"]:
-                    ifname = item["ifname"]
-                    if self._current_uuid(ifname) != item["uuid"]:
-                        raise DNSHelperError(f"Подключение {ifname} сменилось во время настройки DNS.")
-                    attempted.append(item)
-                    ipv4_servers = [server for server in servers if ipaddress.ip_address(server).version == 4]
-                    ipv6_servers = [server for server in servers if ipaddress.ip_address(server).version == 6]
-                    args = ["nmcli", "device", "modify", ifname,
-                            "ipv4.dns", " ".join(ipv4_servers),
-                            "ipv4.ignore-auto-dns", "yes",
-                            "ipv6.dns", " ".join(ipv6_servers),
-                            "ipv6.ignore-auto-dns", "yes"]
-                    self._run(args, timeout=30)
-                    current = self._run([
-                        "nmcli", "--colors", "no", "--terse",
-                        "--fields", "IP4.DNS,IP6.DNS", "device", "show", ifname,
-                    ])
-                    actual = set()
-                    for raw in current.splitlines():
-                        value = raw.split(":", 1)[-1].strip()
-                        try:
-                            actual.add(str(ipaddress.ip_address(value)))
-                        except ValueError:
-                            continue
-                    if actual != set(servers):
-                        raise DNSHelperError(
-                            f"Проверка активного DNS на {ifname} не пройдена: "
-                            f"ожидались {', '.join(servers)}, получены {', '.join(sorted(actual)) or 'нет серверов'}."
-                        )
-                if self.manage_guard:
-                    self._run(
-                        ["systemctl", "start", "adguard-vpn-desktop-dns-guard.service"],
-                        timeout=30,
-                    )
-                    active = self._run(
-                        ["systemctl", "is-active", "adguard-vpn-desktop-dns-guard.service"],
-                        timeout=10,
-                    )
-                    if active.strip() != "active":
-                        raise DNSHelperError("Служба аварийного восстановления DNS не запустилась.")
+                state["phase"] = "active"
+                self._write_state(state)
             except Exception as exc:
                 rollback_errors = []
                 if self.manage_guard:
@@ -343,6 +311,11 @@ class TemporaryDNSHelper:
                         + "; ".join(rollback_errors)
                     ) from exc
                 self.state_file.unlink(missing_ok=True)
+                if self.manage_guard:
+                    self.runner(
+                        ["systemctl", "stop", "adguard-vpn-desktop-dns-guard.service"],
+                        timeout=20,
+                    )
                 raise DNSHelperError(f"Настройка DNS отменена; исходные профили повторно применены: {exc}") from exc
             return {"active": True, "tunnel": tunnel, "devices": state["devices"], "dns_servers": list(servers)}
         finally:
@@ -357,6 +330,8 @@ class TemporaryDNSHelper:
                 return {"restored": False, "detail": "no-active-override"}
             results, errors = [], []
             for item in reversed(state["devices"]):
+                if item["ifname"] not in state["modified_devices"]:
+                    continue
                 try:
                     results.append({
                         "ifname": item["ifname"],
@@ -397,9 +372,14 @@ class TemporaryDNSHelper:
                     current_boot = Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
                 except OSError:
                     current_boot = None
-                if (state.get("boot_id") != current_boot
+                if (state.get("phase") != "active"
+                        or state.get("boot_id") != current_boot
                         or not isinstance(tunnel, str) or not self._vpn_connected(tunnel)):
-                    self.restore()
+                    try:
+                        self.restore()
+                    except DNSHelperError:
+                        # An in-flight apply/restore owns the operation lock. Retry on the next tick.
+                        pass
                 self.sleep(interval)
         finally:
             try:
