@@ -283,29 +283,74 @@ class TemporaryDNSHelper:
                 "modified_devices": [],
                 "devices": [
                     {
-                        "ifname": x["ifname"],
-                        "uuid": x["con-uuid"],
-                        "original_dns": self._effective_dns(x["ifname"]),
+                        "ifname": item["ifname"],
+                        "uuid": item["con-uuid"],
+                        "original_dns": self._effective_dns(item["ifname"]),
                         "applied_dns": list(servers),
                     }
-                    for x in devices
+                    for item in devices
                 ],
             }
             self._write_state(state)
             attempted = []
             try:
+                # Start recovery before the first device change. The state phase
+                # remains "applying" until every device has passed verification.
+                if self.manage_guard:
+                    self._run(
+                        ["systemctl", "start", "adguard-vpn-desktop-dns-guard.service"],
+                        timeout=30,
+                    )
+                    active = self._run(
+                        ["systemctl", "is-active", "adguard-vpn-desktop-dns-guard.service"],
+                        timeout=10,
+                    )
+                    if active.strip() != "active":
+                        raise DNSHelperError("Служба аварийного восстановления DNS не запустилась.")
+
+                for item in state["devices"]:
+                    ifname = item["ifname"]
+                    if self._current_uuid(ifname) != item["uuid"]:
+                        raise DNSHelperError(f"Подключение {ifname} сменилось во время настройки DNS.")
+                    attempted.append(item)
+                    state["modified_devices"].append(ifname)
+                    self._write_state(state)
+
+                    ipv4_servers = [
+                        server for server in servers
+                        if ipaddress.ip_address(server).version == 4
+                    ]
+                    ipv6_servers = [
+                        server for server in servers
+                        if ipaddress.ip_address(server).version == 6
+                    ]
+                    args = [
+                        "nmcli", "device", "modify", ifname,
+                        "ipv4.dns", " ".join(ipv4_servers),
+                        "ipv4.ignore-auto-dns", "yes",
+                        "ipv6.dns", " ".join(ipv6_servers),
+                        "ipv6.ignore-auto-dns", "yes",
+                    ]
+                    self._run(args, timeout=30)
+                    actual = self._effective_dns(ifname)
+                    if set(actual) != set(servers):
+                        raise DNSHelperError(
+                            f"Проверка активного DNS на {ifname} не пройдена: "
+                            f"ожидались {', '.join(servers)}, "
+                            f"получены {', '.join(actual) or 'нет серверов'}."
+                        )
+
                 state["phase"] = "active"
                 self._write_state(state)
             except Exception as exc:
                 rollback_errors = []
-                if self.manage_guard:
-                    self.runner(["systemctl", "stop", "adguard-vpn-desktop-dns-guard.service"], timeout=20)
                 for item in reversed(attempted):
                     try:
                         self._reapply(item)
                     except Exception as rollback_exc:
                         rollback_errors.append(f"{item['ifname']}: {rollback_exc}")
                 if rollback_errors:
+                    # Keep the recovery record and the already-running monitor.
                     raise DNSHelperError(
                         f"Настройка DNS не завершена: {exc}. Откат требует восстановления: "
                         + "; ".join(rollback_errors)
@@ -316,8 +361,16 @@ class TemporaryDNSHelper:
                         ["systemctl", "stop", "adguard-vpn-desktop-dns-guard.service"],
                         timeout=20,
                     )
-                raise DNSHelperError(f"Настройка DNS отменена; исходные профили повторно применены: {exc}") from exc
-            return {"active": True, "tunnel": tunnel, "devices": state["devices"], "dns_servers": list(servers)}
+                raise DNSHelperError(
+                    f"Настройка DNS отменена; исходное состояние восстановлено: {exc}"
+                ) from exc
+
+            return {
+                "active": True,
+                "tunnel": tunnel,
+                "devices": state["devices"],
+                "dns_servers": list(servers),
+            }
         finally:
             os.close(lock)
 
