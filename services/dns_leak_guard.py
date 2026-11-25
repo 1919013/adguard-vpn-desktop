@@ -109,6 +109,7 @@ class DNSLeakGuard:
         if set(active_servers) != set(cli_servers):
             reasons.append("Системные DNS-серверы не совпадают с DNS-серверами AdGuard VPN CLI.")
 
+        probed_servers = []
         for server in cli_servers:
             family = "-6" if ":" in server else "-4"
             code, output = self.runner(["ip", "-j", family, "route", "get", server])
@@ -124,6 +125,7 @@ class DNSLeakGuard:
             if devs != {tunnel_interface}:
                 reasons.append(f"DNS-сервер {server} не подтверждён через {tunnel_interface} (маршрут: {', '.join(sorted(str(x) for x in devs)) or 'неизвестен'}).")
                 continue
+            probed_servers.append(server)
             probe_ok, probe_detail = self.query_probe(server)
             if not probe_ok:
                 reasons.append(f"Проверка реального DNS-запроса к {server} не пройдена: {probe_detail}")
@@ -132,5 +134,6 @@ class DNSLeakGuard:
             "ready": not reasons,
             "servers": cli_servers,
             "reasons": tuple(reasons),
-            "real_dns_queries_checked": True,
+            "probed_servers": tuple(probed_servers),
+            "real_dns_queries_checked": bool(cli_servers) and len(probed_servers) == len(cli_servers),
         }
