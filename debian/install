@@ -5,6 +5,7 @@ modules/*.py usr/lib/adguard-vpn-desktop/modules
 services/*.py usr/lib/adguard-vpn-desktop/services
 ui/*.py usr/lib/adguard-vpn-desktop/ui
 i18n usr/lib/adguard-vpn-desktop
+docs/help.html usr/share/doc/adguard-vpn-desktop
 tools/adguard-vpn-desktop usr/bin
 tools/adguard-vpn-desktop-helper usr/libexec
 data/polkit-1/actions/org.adguard-vpn-desktop.policy usr/share/polkit-1/actions
