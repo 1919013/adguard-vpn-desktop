@@ -1,3 +1,12 @@
+adguard-vpn-desktop (0.2.1) unstable; urgency=medium
+
+  * Add Russian Help tab and browser-readable documentation.
+  * Add scrollable, selectable and resizable GTK message dialogs.
+  * Report absent NetworkManager DNS test profiles as not created.
+  * Add per-application VPN routing stop without terminating the application.
+
+ -- ADGuard VPN Desktop contributors <noreply@example.invalid>  Wed, 25 Nov 2026 13:00:00 +0300
+
 adguard-vpn-desktop (0.2.0) unstable; urgency=medium
 
   * Add fail-closed per-application launch workflow.

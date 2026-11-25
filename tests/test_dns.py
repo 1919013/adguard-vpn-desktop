@@ -86,6 +86,24 @@ class DNSManagerTests(unittest.TestCase):
             os.chmod(manager.backup_file, 0o600)
             self.assertEqual(manager.validate_backup(), data)
 
+    def test_missing_test_profiles_are_reported_as_not_created(self):
+        def runner(command, timeout=15):
+            if command[:2] == ["adguardvpn-cli", "status"]:
+                return 0, "Connected to HELSINKI in TUN mode, running on tun0"
+            if command[-2:] == ["connection", "show"]:
+                return 0, ""
+            if command[-3:] == ["connection", "show", "--active"]:
+                return 0, ""
+            return 0, ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            manager = DNSManager(state_dir=directory, runner=runner)
+            status = manager.status()
+            for profile in TEST_PROFILES:
+                self.assertTrue(status["profiles"][profile]["not_created"])
+                self.assertFalse(status["profiles"][profile]["exists"])
+                self.assertNotIn("error", status["profiles"][profile])
+
     def test_dns_constants(self):
         self.assertEqual(ADGUARD_DNS, ("46.243.231.30", "46.243.231.31"))
 

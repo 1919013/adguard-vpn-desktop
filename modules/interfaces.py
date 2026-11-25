@@ -23,7 +23,12 @@ def build_interfaces_tab(manager: InterfaceManager | None = None):
     current = Gtk.Label(label="Текущий интерфейс AdGuard VPN: проверка…", xalign=0)
     current.set_line_wrap(True)
     current.set_selectable(True)
-    root.pack_start(current, False, False, 0)
+    current_scroll = Gtk.ScrolledWindow()
+    current_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+    current_scroll.set_min_content_height(44)
+    current_scroll.set_max_content_height(100)
+    current_scroll.add(current)
+    root.pack_start(current_scroll, False, False, 0)
 
     note = Gtk.Label(
         label=("Отметьте интерфейсы для дальнейшей настройки. На этом этапе список "

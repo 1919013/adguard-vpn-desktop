@@ -133,9 +133,13 @@ def build_dns_tab(manager: DNSManager | None = None):
         ]
         for profile, details in data["profiles"].items():
             lines.extend(["", f"[{profile}]"])
-            if "error" in details:
-                lines.append("Ошибка: " + details["error"])
+            if details.get("not_created"):
+                lines.append("Статус: тестовый профиль ещё не создан.")
+                lines.append("Это не ошибка: NetworkManager пока не содержит такой профиль.")
+            elif "error" in details:
+                lines.append("Ошибка чтения существующего профиля: " + details["error"])
             else:
+                lines.append("Статус: профиль найден.")
                 lines.append("Активное устройство: " + str(details["active_device"] or "нет"))
                 for key, value in details["settings"].items():
                     lines.append(f"{key}: {value}")
@@ -154,11 +158,14 @@ def build_dns_tab(manager: DNSManager | None = None):
         ]
         for profile, details in data["profiles"].items():
             lines.append(profile)
-            lines.append("Активное устройство: " + str(details["active_device"] or "нет"))
-            lines.append(
-                "Планируемый DNS: "
-                + (", ".join(details["planned_dns"]) if details["planned_dns"] else "не применяется: профиль не активен")
-            )
+            if details.get("not_created"):
+                lines.append("Статус: тестовый профиль ещё не создан; изменений не требуется.")
+            else:
+                lines.append("Активное устройство: " + str(details["active_device"] or "нет"))
+                lines.append(
+                    "Планируемый DNS: "
+                    + (", ".join(details["planned_dns"]) if details["planned_dns"] else "не применяется: профиль не активен")
+                )
             lines.append("")
         lines.append("Сетевые настройки не изменялись.")
         return "\n".join(lines)

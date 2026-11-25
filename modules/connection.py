@@ -63,17 +63,13 @@ def build_connection_tab():
 
     locations: list[dict] = []
 
+    from ui.dialogs import show_scrolled_message
+
     def show_message(title, body):
-        dialog = Gtk.MessageDialog(
-            transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
-            flags=0,
-            message_type=Gtk.MessageType.INFO,
-            buttons=Gtk.ButtonsType.OK,
-            text=title,
-        )
-        dialog.format_secondary_text((body or "Нет дополнительной информации.")[:7000])
-        dialog.run()
-        dialog.destroy()
+        parent = root.get_toplevel()
+        if not isinstance(parent, Gtk.Window):
+            parent = None
+        show_scrolled_message(parent, title, body)
 
     def run_async(operation, callback):
         def worker():
