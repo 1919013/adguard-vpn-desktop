@@ -65,7 +65,14 @@ def build_applications_tab():
     scroller.add(rows)
 
     summary = Gtk.Label(label="Загрузка каталога приложений…", xalign=0)
-    root.pack_start(summary, False, False, 0)
+    summary.set_line_wrap(True)
+    summary.set_selectable(True)
+    summary_scroll = Gtk.ScrolledWindow()
+    summary_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+    summary_scroll.set_min_content_height(48)
+    summary_scroll.set_max_content_height(100)
+    summary_scroll.add(summary)
+    root.pack_start(summary_scroll, False, False, 0)
     applications = []
     selected = set()
     custom_paths = set()
@@ -184,7 +191,7 @@ def build_applications_tab():
             launch_button.set_sensitive(app.desktop_id in selected and not launching and not app.dbus_activatable)
             if app.dbus_activatable:
                 launch_button.set_tooltip_text("D-Bus activation пока не поддерживается")
-            stop_button = Gtk.Button(label="Прекратить работу через VPN")
+            stop_button = Gtk.Button(label="Прекратить работу приложения через VPN")
             stop_button.set_tooltip_text(
                 "Удалить правила VPN-маршрутизации, не завершая работу приложения"
             )
