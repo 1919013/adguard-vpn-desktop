@@ -148,8 +148,14 @@ class TemporaryDNSHelper:
         for item in state["devices"]:
             if (not isinstance(item, dict)
                     or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", str(item.get("ifname", "")))
-                    or not re.fullmatch(r"[0-9a-fA-F-]{36}", str(item.get("uuid", "")))):
+                    or not re.fullmatch(r"[0-9a-fA-F-]{36}", str(item.get("uuid", "")))
+                    or not isinstance(item.get("original_dns"), list)):
                 raise DNSHelperError("Состояние DNS содержит недопустимое устройство.")
+            try:
+                for address in item["original_dns"]:
+                    ipaddress.ip_address(address)
+            except (TypeError, ValueError) as exc:
+                raise DNSHelperError("Состояние DNS содержит некорректный исходный DNS.") from exc
         return state
 
     def _device_records(self):
@@ -202,6 +208,20 @@ class TemporaryDNSHelper:
             ):
                 raise DNSHelperError(f"Маршрут DNS-сервера {server} не подтверждён через {tunnel}.")
 
+    def _effective_dns(self, ifname):
+        output = self._run([
+            "nmcli", "--colors", "no", "--terse",
+            "--fields", "IP4.DNS,IP6.DNS", "device", "show", ifname,
+        ])
+        addresses = []
+        for line in output.splitlines():
+            value = line.split(":", 1)[-1].strip()
+            try:
+                addresses.append(str(ipaddress.ip_address(value)))
+            except ValueError:
+                continue
+        return sorted(set(addresses))
+
     def _current_uuid(self, ifname):
         output = self._run([
             "nmcli", "--colors", "no", "--terse", "--escape", "yes",
@@ -212,11 +232,19 @@ class TemporaryDNSHelper:
                 return _unescape(line.split(":", 1)[1].strip())
         return None
 
-    def _reapply(self, ifname, uuid):
+    def _reapply(self, item):
+        ifname, uuid = item["ifname"], item["uuid"]
         if self._current_uuid(ifname) != uuid:
             return "skipped-connection-changed"
         self._run(["nmcli", "device", "reapply", ifname], timeout=30)
-        return "restored-from-active-profile"
+        actual = self._effective_dns(ifname)
+        expected = sorted(set(item["original_dns"]))
+        if actual != expected:
+            raise DNSHelperError(
+                f"DNS на {ifname} после reapply не совпадает с исходным состоянием: "
+                f"ожидалось {expected}, получено {actual}."
+            )
+        return "restored-and-verified"
 
     def apply(self, tunnel, dns_servers=DEFAULT_DNS):
         self._require_root()
@@ -240,7 +268,14 @@ class TemporaryDNSHelper:
                 "owner": OWNER, "version": 1, "tunnel": tunnel,
                 "dns_servers": list(servers),
                 "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip(),
-                "devices": [{"ifname": x["ifname"], "uuid": x["con-uuid"]} for x in devices],
+                "devices": [
+                    {
+                        "ifname": x["ifname"],
+                        "uuid": x["con-uuid"],
+                        "original_dns": self._effective_dns(x["ifname"]),
+                    }
+                    for x in devices
+                ],
             }
             self._write_state(state)
             attempted = []
@@ -289,7 +324,7 @@ class TemporaryDNSHelper:
                     self.runner(["systemctl", "stop", "adguard-vpn-desktop-dns-guard.service"], timeout=20)
                 for item in reversed(attempted):
                     try:
-                        self._reapply(item["ifname"], item["uuid"])
+                        self._reapply(item)
                     except Exception as rollback_exc:
                         rollback_errors.append(f"{item['ifname']}: {rollback_exc}")
                 if rollback_errors:
@@ -315,7 +350,7 @@ class TemporaryDNSHelper:
                 try:
                     results.append({
                         "ifname": item["ifname"],
-                        "result": self._reapply(item["ifname"], item["uuid"]),
+                        "result": self._reapply(item),
                     })
                 except Exception as exc:
                     errors.append(f"{item['ifname']}: {exc}")
