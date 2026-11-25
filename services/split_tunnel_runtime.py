@@ -156,9 +156,6 @@ class SplitTunnelRuntime:
         return False
 
     def launch(self, application) -> int:
-        self._stop_routing_request = threading.Event()
-        self._routing_stopped_event = threading.Event()
-        self._routing_stop_error = []
         if self._already_running(application):
             raise SplitTunnelRuntimeError(
                 "Обнаружен уже запущенный экземпляр приложения. Сначала полностью закрой его, "
@@ -200,6 +197,9 @@ class SplitTunnelRuntime:
             watch.stop()
             raise SplitTunnelRuntimeError("VPN отключён или изменил TUN до запуска приложения.")
 
+        self._stop_routing_request = threading.Event()
+        self._routing_stopped_event = threading.Event()
+        self._routing_stop_error = []
         policy = {}
         try:
             def apply_rules(cgroup_path: str):
