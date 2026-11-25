@@ -9,6 +9,8 @@ import threading
 from typing import Callable
 
 from services.dns_manager import DNSManager, DNSManagerError, TEST_PROFILES
+from services.polkit_dns import PolkitDNSClient
+from services.routing_inspector import RoutingInspector
 
 
 class DNSController:
@@ -16,6 +18,7 @@ class DNSController:
 
     def __init__(self, manager: DNSManager | None = None):
         self.manager = manager or DNSManager()
+        self.runtime_client = PolkitDNSClient()
 
     def get_status(self) -> dict:
         return self.manager.status()
@@ -34,6 +37,15 @@ class DNSController:
 
     def restore(self) -> None:
         self.manager.restore()
+
+    def apply_runtime_dns(self) -> dict:
+        snapshot = RoutingInspector().inspect()
+        if not snapshot.connected or not snapshot.tunnel_interface:
+            raise RuntimeError("AdGuard VPN CLI не подтвердил активный TUN-туннель.")
+        return self.runtime_client.apply(snapshot.tunnel_interface)
+
+    def restore_runtime_dns(self) -> dict:
+        return self.runtime_client.restore()
 
 
 def build_dns_tab(manager: DNSManager | None = None):
@@ -87,6 +99,8 @@ def build_dns_tab(manager: DNSManager | None = None):
     root.pack_start(action_row, False, False, 0)
     action_row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     root.pack_start(action_row2, False, False, 0)
+    action_row3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    root.pack_start(action_row3, False, False, 0)
 
     buttons = []
 
@@ -232,6 +246,47 @@ def build_dns_tab(manager: DNSManager | None = None):
             "Рабочие профили не затрагиваются.",
             lambda: run_async("Применение AdGuard DNS", controller.apply,
                               lambda _result: "AdGuard DNS применён. IPv6-параметры сохранены."),
+        ),
+    )
+    add_button(
+        action_row3, "Временно включить системный DNS AdGuard",
+        "Временно настроить DNS на активных Ethernet/Wi-Fi устройствах без изменения профилей NetworkManager",
+        lambda: confirm(
+            "Будут временно изменены только активные Ethernet/Wi-Fi устройства NetworkManager. "
+            "Постоянные профили не изменяются. DNS-helper проверит маршрут к upstream через TUN "
+            "и запустит системную службу, которая восстановит настройки при отключении VPN, "
+            "остановке службы или следующей загрузке системы.",
+            lambda: run_async(
+                "Временное применение системного DNS",
+                controller.apply_runtime_dns,
+                lambda data: (
+                    "ВРЕМЕННЫЙ DNS ВКЛЮЧЁН\n"
+                    + "TUN: " + str(data.get("tunnel")) + "\n"
+                    + "DNS: " + ", ".join(data.get("dns_servers", [])) + "\n"
+                    + "Устройства: " + ", ".join(x["ifname"] for x in data.get("devices", []))
+                    + "\n\nПостоянные профили NetworkManager не изменялись. "
+                    "Служба восстановления запущена."
+                ),
+            ),
+        ),
+    )
+    add_button(
+        action_row3, "Восстановить временный DNS",
+        "Повторно применить текущие профили NetworkManager к затронутым устройствам",
+        lambda: confirm(
+            "Временные DNS-переопределения будут сняты командой NetworkManager reapply. "
+            "Текущие постоянные настройки и DHCP-параметры профилей будут применены заново.",
+            lambda: run_async(
+                "Восстановление временного системного DNS",
+                controller.restore_runtime_dns,
+                lambda data: (
+                    "Временный DNS восстановлен.\n"
+                    + "\n".join(
+                        f"{item['ifname']}: {item['result']}"
+                        for item in data.get("devices", [])
+                    )
+                ),
+            ),
         ),
     )
     add_button(
