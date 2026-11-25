@@ -113,9 +113,22 @@ def set_cli_routing_mode(mode: str, runner: Callable = run_cli) -> dict:
             raise RoutingModeError(
                 "Не удалось включить системный DNS AdGuard VPN: " + (output or "ошибка CLI")
             )
-        after_dns = read_cli_routing_config(runner)
-        if not after_dns["change_system_dns"]:
-            raise RoutingModeError("CLI не подтвердил включение Change system DNS; маршрутизация не изменена.")
+        try:
+            after_dns = read_cli_routing_config(runner)
+            if not after_dns["change_system_dns"]:
+                raise RoutingModeError("CLI не подтвердил включение Change system DNS.")
+        except Exception as exc:
+            rollback_code, rollback_output = runner(
+                ["config", "set-change-system-dns", "off"], timeout=20
+            )
+            if rollback_code:
+                raise RoutingModeError(
+                    f"CLI не подтвердил системный DNS: {exc}. КРИТИЧЕСКИ: "
+                    "не удалось вернуть Change system DNS: off: " + rollback_output
+                ) from exc
+            raise RoutingModeError(
+                f"CLI не подтвердил системный DNS; прежнее значение off восстановлено: {exc}"
+            ) from exc
 
     if before["routing_mode"] == desired:
         return {"vpn_mode": "TUN", "routing_mode": desired, "change_system_dns": True, "changed": False}
@@ -123,7 +136,15 @@ def set_cli_routing_mode(mode: str, runner: Callable = run_cli) -> dict:
     code, output = runner(["config", "set-tun-routing-mode", desired], timeout=20)
     if code:
         if not dns_was_enabled:
-            runner(["config", "set-change-system-dns", "off"], timeout=20)
+            rollback_code, rollback_output = runner(
+                ["config", "set-change-system-dns", "off"], timeout=20
+            )
+            if rollback_code:
+                raise RoutingModeError(
+                    "CLI не применил режим " + desired + ": " + (output or "ошибка CLI")
+                    + ". КРИТИЧЕСКИ: не удалось вернуть Change system DNS: off: "
+                    + rollback_output
+                )
         raise RoutingModeError("CLI не применил режим " + desired + ": " + (output or "ошибка CLI"))
 
     try:
