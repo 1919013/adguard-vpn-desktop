@@ -9,7 +9,7 @@ adguard-vpn-desktop (0.2.2) unstable; urgency=medium
   * Gate per-application launch on the applied SCRIPT mode.
   * Add tests for temporary DNS rollback, stale devices and routing mode transitions.
 
- -- ADGuard VPN Desktop contributors <noreply@example.invalid>  Wed, 25 Nov 2026 18:00:00 +0300
+ -- ADGuard VPN Desktop contributors <noreply@example.invalid>  Wed, 25 Nov 2026 17:00:00 +0300
 
 adguard-vpn-desktop (0.2.1) unstable; urgency=medium
 
