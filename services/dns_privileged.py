@@ -149,10 +149,11 @@ class TemporaryDNSHelper:
             if (not isinstance(item, dict)
                     or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", str(item.get("ifname", "")))
                     or not re.fullmatch(r"[0-9a-fA-F-]{36}", str(item.get("uuid", "")))
-                    or not isinstance(item.get("original_dns"), list)):
+                    or not isinstance(item.get("original_dns"), list)
+                    or not isinstance(item.get("applied_dns"), list)):
                 raise DNSHelperError("Состояние DNS содержит недопустимое устройство.")
             try:
-                for address in item["original_dns"]:
+                for address in item["original_dns"] + item["applied_dns"]:
                     ipaddress.ip_address(address)
             except (TypeError, ValueError) as exc:
                 raise DNSHelperError("Состояние DNS содержит некорректный исходный DNS.") from exc
@@ -235,6 +236,12 @@ class TemporaryDNSHelper:
     def _reapply(self, item):
         ifname, uuid = item["ifname"], item["uuid"]
         if self._current_uuid(ifname) != uuid:
+            actual = self._effective_dns(ifname)
+            if sorted(set(actual)) == sorted(set(item["applied_dns"])):
+                raise DNSHelperError(
+                    f"Подключение на {ifname} сменилось, но временный DNS override всё ещё виден. "
+                    "Устройство не изменялось; состояние сохранено для повторного восстановления."
+                )
             return "skipped-connection-changed"
         self._run(["nmcli", "device", "reapply", ifname], timeout=30)
         actual = self._effective_dns(ifname)
@@ -273,6 +280,7 @@ class TemporaryDNSHelper:
                         "ifname": x["ifname"],
                         "uuid": x["con-uuid"],
                         "original_dns": self._effective_dns(x["ifname"]),
+                        "applied_dns": list(servers),
                     }
                     for x in devices
                 ],
