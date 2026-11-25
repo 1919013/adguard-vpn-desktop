@@ -28,6 +28,7 @@ class ApplicationSelectionTests(unittest.TestCase):
                 {
                     "selected_ids": ["custom-/opt/tool", "org.example.App"],
                     "custom_paths": ["/opt/tool"],
+                    "mode": "selected",
                 },
             )
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
@@ -37,7 +38,7 @@ class ApplicationSelectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(
                 load_selection(Path(tmp) / "missing.json"),
-                {"selected_ids": [], "custom_paths": []},
+                {"selected_ids": [], "custom_paths": [], "mode": "selected"},
             )
 
     def test_unknown_schema_is_rejected(self):
@@ -58,6 +59,36 @@ class ApplicationSelectionTests(unittest.TestCase):
                 }),
                 encoding="utf-8",
             )
+            with self.assertRaises(ValueError):
+                load_selection(target)
+
+    def test_round_trip_persists_all_apps_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "config" / "applications.json"
+            save_selection(["org.example.App"], [], target, mode="all")
+            loaded = load_selection(target)
+            self.assertEqual(loaded["mode"], "all")
+            self.assertEqual(loaded["selected_ids"], ["org.example.App"])
+
+    def test_version_one_selection_migrates_to_selected_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "applications.json"
+            target.write_text(json.dumps({
+                "schema_version": 1,
+                "selected_ids": ["org.example.App"],
+                "custom_paths": [],
+            }), encoding="utf-8")
+            self.assertEqual(load_selection(target)["mode"], "selected")
+
+    def test_invalid_mode_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "applications.json"
+            target.write_text(json.dumps({
+                "schema_version": 2,
+                "mode": "arbitrary",
+                "selected_ids": [],
+                "custom_paths": [],
+            }), encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_selection(target)
 
