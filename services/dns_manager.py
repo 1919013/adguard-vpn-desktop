@@ -98,6 +98,20 @@ class DNSManager:
                 active[name.replace(r"\:", ":")] = device.replace(r"\:", ":")
         return active
 
+    def existing_profiles(self) -> set[str]:
+        """Return configured NetworkManager profile names without modifying them."""
+        code, output = self._run([
+            "nmcli", "--colors", "no", "--terse", "--fields", "NAME",
+            "connection", "show",
+        ])
+        if code:
+            raise DNSManagerError(f"Cannot list NetworkManager profiles: {output}")
+        return {
+            line.replace(r"\\:", ":").strip()
+            for line in output.splitlines()
+            if line.strip()
+        }
+
     def _read_settings(self, profile: str, fields=BACKUP_FIELDS) -> dict[str, str]:
         if profile not in self.profiles:
             raise DNSManagerError(f"Profile is not allowlisted: {profile}")
@@ -122,15 +136,26 @@ class DNSManager:
     def status(self) -> dict:
         connected, vpn_output = self.vpn_status()
         active = self.active_profiles()
+        existing = self.existing_profiles()
         profiles = {}
         for profile in self.profiles:
+            if profile not in existing:
+                profiles[profile] = {
+                    "exists": False,
+                    "not_created": True,
+                    "active_device": None,
+                    "settings": {},
+                }
+                continue
             try:
                 profiles[profile] = {
+                    "exists": True,
+                    "not_created": False,
                     "active_device": active.get(profile),
                     "settings": self._read_settings(profile),
                 }
             except DNSManagerError as exc:
-                profiles[profile] = {"error": str(exc)}
+                profiles[profile] = {"exists": True, "error": str(exc)}
         return {
             "vpn_connected_tun": connected,
             "vpn_output": vpn_output,
@@ -140,13 +165,16 @@ class DNSManager:
     def dry_run(self) -> dict:
         connected, output = self.vpn_status()
         active = self.active_profiles()
+        existing = self.existing_profiles()
         return {
             "vpn_connected_tun": connected,
             "vpn_output": output,
             "profiles": {
                 p: {
+                    "exists": p in existing,
+                    "not_created": p not in existing,
                     "active_device": active.get(p),
-                    "planned_dns": list(ADGUARD_DNS) if p in active else None,
+                    "planned_dns": list(ADGUARD_DNS) if p in active and p in existing else None,
                 }
                 for p in self.profiles
             },
