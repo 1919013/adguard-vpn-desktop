@@ -1,7 +1,4 @@
-"""GTK application catalog for the split-tunneling workflow.
-
-The selected list is persisted locally, but is not yet applied to VPN routing.
-"""
+"""GTK UI for AdGuard VPN CLI AUTO and process-aware SCRIPT routing modes."""
 from __future__ import annotations
 
 import threading
