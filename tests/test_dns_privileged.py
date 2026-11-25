@@ -20,23 +20,28 @@ class FakeNetwork:
     def __call__(self, argv, *, timeout=12):
         self.commands.append(list(argv))
         if argv[:2] == ["adguardvpn-cli", "status"]:
-            return 0, "Connected to Tallinn\nrunning on tun0"
+            return 0, "Connected to Tallinn\\nrunning on tun0"
         if argv[:2] == ["ip", "-j"]:
             return 0, '[{"dev":"tun0"}]'
+        if argv[:2] == ["nmcli", "--colors"] and "IP4.DNS,IP6.DNS" in argv:
+            iface = argv[-1]
+            if iface in self.modified:
+                return 0, "IP4.DNS:46.243.231.30\\nIP4.DNS:46.243.231.31\\n"
+            return 0, "IP4.DNS:192.0.2.53\\n"
         if argv[:2] == ["nmcli", "--colors"] and "device" in argv and "show" in argv:
             if argv[-1] in self.uuids and "--fields" in argv:
                 iface = argv[-1]
                 return 0, (
-                    f"GENERAL.DEVICE:{iface}\n"
-                    f"GENERAL.CON-UUID:{self.uuids[iface]}\n"
+                    f"GENERAL.DEVICE:{iface}\\n"
+                    f"GENERAL.CON-UUID:{self.uuids[iface]}\\n"
                 )
             return 0, (
-                f"GENERAL.DEVICE:enp1s0\nGENERAL.TYPE:ethernet\n"
-                f"GENERAL.STATE:100 (connected)\nGENERAL.CON-UUID:{UUID_ETH}\n"
-                f"GENERAL.DEVICE:wlp2s0\nGENERAL.TYPE:wifi\n"
-                f"GENERAL.STATE:100 (connected)\nGENERAL.CON-UUID:{UUID_WIFI}\n"
-                f"GENERAL.DEVICE:tun0\nGENERAL.TYPE:tun\n"
-                f"GENERAL.STATE:100 (connected)\nGENERAL.CON-UUID:--\n"
+                f"GENERAL.DEVICE:enp1s0\\nGENERAL.TYPE:ethernet\\n"
+                f"GENERAL.STATE:100 (connected)\\nGENERAL.CON-UUID:{UUID_ETH}\\n"
+                f"GENERAL.DEVICE:wlp2s0\\nGENERAL.TYPE:wifi\\n"
+                f"GENERAL.STATE:100 (connected)\\nGENERAL.CON-UUID:{UUID_WIFI}\\n"
+                f"GENERAL.DEVICE:tun0\\nGENERAL.TYPE:tun\\n"
+                f"GENERAL.STATE:100 (connected)\\nGENERAL.CON-UUID:--\\n"
             )
         if argv[:3] == ["nmcli", "device", "modify"]:
             self.modified.add(argv[3])
@@ -44,14 +49,6 @@ class FakeNetwork:
         if argv[:3] == ["nmcli", "device", "reapply"]:
             self.modified.discard(argv[3])
             return 0, "success"
-        if argv[:2] == ["nmcli", "--colors"] and "IP4.DNS,IP6.DNS" in argv:
-            iface = argv[-1]
-            if iface in self.modified:
-                return 0, (
-                    "IP4.DNS:46.243.231.30\n"
-                    "IP4.DNS:46.243.231.31\n"
-                )
-            return 0, "IP4.DNS:192.0.2.53\n"
         if argv[:2] == ["systemctl", "start"]:
             return 0, ""
         if argv[:2] == ["systemctl", "is-active"]:
