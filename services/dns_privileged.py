@@ -50,13 +50,15 @@ class TemporaryDNSHelper:
     """Root-only runtime DNS override; no persistent NM profile mutations."""
 
     def __init__(self, *, state_file=STATE_FILE, runner=_default_runner,
-                 euid=os.geteuid, uid=os.getuid, which=shutil.which, sleep=time.sleep):
+                 euid=os.geteuid, uid=os.getuid, which=shutil.which,
+                 sleep=time.sleep, manage_guard=True):
         self.state_file = Path(state_file)
         self.runner = runner
         self.euid = euid
         self.uid = uid
         self.which = which
         self.sleep = sleep
+        self.manage_guard = manage_guard
         self.lock_file = self.state_file.with_suffix(".lock")
 
     def _run(self, argv, *, timeout=12):
@@ -251,6 +253,8 @@ class TemporaryDNSHelper:
                         )
             except Exception as exc:
                 rollback_errors = []
+                if self.manage_guard:
+                    self.runner(["systemctl", "stop", "adguard-vpn-desktop-dns-guard.service"], timeout=20)
                 for item in reversed(attempted):
                     try:
                         self._reapply(item["ifname"], item["uuid"])
@@ -267,7 +271,7 @@ class TemporaryDNSHelper:
         finally:
             os.close(lock)
 
-    def restore(self):
+    def restore(self, *, stop_guard=False):
         self._require_root()
         lock = self._locked()
         try:
@@ -289,6 +293,15 @@ class TemporaryDNSHelper:
                     + "; ".join(errors)
                 )
             self.state_file.unlink(missing_ok=True)
+            if stop_guard and self.manage_guard:
+                code, output = self.runner(
+                    ["systemctl", "stop", "adguard-vpn-desktop-dns-guard.service"],
+                    timeout=20,
+                )
+                if code not in (0, 5):
+                    raise DNSHelperError(
+                        "DNS восстановлен, но служба наблюдения не остановлена: " + (output or str(code))
+                    )
             return {"restored": True, "devices": results}
         finally:
             os.close(lock)
@@ -334,7 +347,7 @@ def main(argv=None):
         if args.operation == "apply":
             result = helper.apply(args.tunnel, args.dns_server)
         elif args.operation == "restore":
-            result = helper.restore()
+            result = helper.restore(stop_guard=True)
         else:
             helper.watch()
             return 0
