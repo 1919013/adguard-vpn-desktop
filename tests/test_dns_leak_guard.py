@@ -72,7 +72,7 @@ class DNSLeakGuardTests(unittest.TestCase):
             cli = root / "cli-resolv.conf"
             active = root / "resolv.conf"
             cli.write_text("nameserver 46.243.231.30\n")
-            active.write_text("nameserver 46.243.231.30\\n")
+            active.write_text("nameserver 46.243.231.30\n")
             guard = DNSLeakGuard(
                 runner=lambda argv, timeout=8: (0, '[{"dev":"tun0"}]'),
                 resolv_conf=active,
