@@ -50,12 +50,18 @@ class TemporaryDNSHelper:
     """Root-only runtime DNS override; no persistent NM profile mutations."""
 
     def __init__(self, *, state_file=STATE_FILE, runner=_default_runner,
-                 euid=os.geteuid, uid=os.getuid, which=shutil.which,
-                 sleep=time.sleep, manage_guard=True):
+                 euid=os.geteuid, uid=os.getuid, caller_uid=None,
+                 which=shutil.which, sleep=time.sleep, manage_guard=True):
         self.state_file = Path(state_file)
         self.runner = runner
         self.euid = euid
         self.uid = uid
+        if caller_uid is None:
+            try:
+                caller_uid = int(os.environ.get("PKEXEC_UID", os.getuid()))
+            except (TypeError, ValueError):
+                caller_uid = os.getuid()
+        self.caller_uid = int(caller_uid)
         self.which = which
         self.sleep = sleep
         self.manage_guard = manage_guard
@@ -202,7 +208,10 @@ class TemporaryDNSHelper:
         for server in servers:
             address = ipaddress.ip_address(server)
             family = "-6" if address.version == 6 else "-4"
-            output = self._run(["ip", "-j", family, "route", "get", str(address)])
+            output = self._run([
+                "ip", "-j", family, "route", "get", str(address),
+                "uid", str(self.caller_uid),
+            ])
             try:
                 routes = json.loads(output)
             except json.JSONDecodeError as exc:
