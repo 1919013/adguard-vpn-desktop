@@ -71,14 +71,20 @@ def build_applications_tab():
     custom_paths = set()
     runtime = SplitTunnelRuntime()
     launching = False
+    active_app_id = None
+    stop_requested = False
     launch_controls = {}
 
     def refresh_launch_controls():
-        for desktop_id, button in launch_controls.items():
-            button.set_sensitive(not launching and desktop_id in selected)
+        for desktop_id, pair in launch_controls.items():
+            launch_button, stop_button = pair
+            launch_button.set_sensitive(not launching and desktop_id in selected)
+            stop_button.set_sensitive(
+                launching and desktop_id == active_app_id and not stop_requested
+            )
 
     def launch_application(app):
-        nonlocal launching
+        nonlocal launching, active_app_id, stop_requested
         if app.desktop_id not in selected:
             summary.set_text("Сначала отметь приложение флажком.")
             return
@@ -86,6 +92,8 @@ def build_applications_tab():
             summary.set_text("Дождись завершения текущего запуска: пока поддерживается один активный процесс.")
             return
         launching = True
+        active_app_id = app.desktop_id
+        stop_requested = False
         refresh_launch_controls()
         summary.set_text(f"Подготовка безопасного запуска {app.name}…")
 
@@ -100,8 +108,44 @@ def build_applications_tab():
         threading.Thread(target=worker, name="adguard-split-tunnel-launch", daemon=True).start()
 
     def finish_launch(message):
-        nonlocal launching
+        nonlocal launching, active_app_id, stop_requested
         launching = False
+        active_app_id = None
+        stop_requested = False
+        summary.set_text(message)
+        refresh_launch_controls()
+        return False
+
+    def stop_application_routing(app):
+        nonlocal stop_requested
+        if not launching or active_app_id != app.desktop_id:
+            summary.set_text("Для этого приложения сейчас нет активной VPN-маршрутизации.")
+            return
+        if stop_requested:
+            return
+        stop_requested = True
+        refresh_launch_controls()
+        summary.set_text(
+            f"Отключение VPN-маршрутизации для {app.name}… "
+            "Само приложение останется запущенным."
+        )
+
+        def worker():
+            try:
+                runtime.stop_routing()
+                GLib.idle_add(
+                    finish_stop_routing,
+                    f"{app.name}: VPN-маршрутизация прекращена. Приложение продолжает работать."
+                )
+            except Exception as exc:
+                GLib.idle_add(finish_stop_routing, f"Не удалось отключить VPN-маршрутизацию: {exc}", True)
+
+        threading.Thread(target=worker, name="adguard-split-tunnel-stop", daemon=True).start()
+
+    def finish_stop_routing(message, failed=False):
+        nonlocal stop_requested
+        if failed:
+            stop_requested = False
         summary.set_text(message)
         refresh_launch_controls()
         return False
@@ -140,8 +184,19 @@ def build_applications_tab():
             launch_button.set_sensitive(app.desktop_id in selected and not launching and not app.dbus_activatable)
             if app.dbus_activatable:
                 launch_button.set_tooltip_text("D-Bus activation пока не поддерживается")
-            launch_controls[app.desktop_id] = launch_button
+            stop_button = Gtk.Button(label="Прекратить работу через VPN")
+            stop_button.set_tooltip_text(
+                "Удалить правила VPN-маршрутизации, не завершая работу приложения"
+            )
+            stop_button.connect(
+                "clicked", lambda _button, item=app: stop_application_routing(item)
+            )
+            stop_button.set_sensitive(
+                launching and app.desktop_id == active_app_id and not stop_requested
+            )
+            launch_controls[app.desktop_id] = (launch_button, stop_button)
             line.pack_start(launch_button, False, False, 0)
+            line.pack_start(stop_button, False, False, 0)
             rows.pack_start(line, False, False, 0)
         if not visible:
             rows.pack_start(Gtk.Label(label="Приложения не найдены.", xalign=0), False, False, 0)
