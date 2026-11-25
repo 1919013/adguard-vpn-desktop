@@ -347,7 +347,9 @@ def build_applications_tab():
 
     def persist():
         try:
-            save_selection(selected, custom_paths, mode=routing_mode)
+            stored_mode = ("all" if applied_mode == "AUTO" else
+                           "selected" if applied_mode == "SCRIPT" else routing_mode)
+            save_selection(selected, custom_paths, mode=stored_mode)
         except (OSError, ValueError) as exc:
             summary.set_text("Не удалось сохранить выбор приложений: " + str(exc))
 
