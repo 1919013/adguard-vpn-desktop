@@ -41,6 +41,7 @@ class SplitTunnelRuntimeTests(unittest.TestCase):
         runtime = SplitTunnelRuntime.__new__(SplitTunnelRuntime)
         runtime._stop_routing_request = threading.Event()
         runtime._routing_stopped_event = threading.Event()
+        runtime._routing_stop_error = []
 
         def helper():
             self.assertTrue(runtime._stop_routing_request.wait(1))
