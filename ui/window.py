@@ -9,6 +9,9 @@ from ui.tabs import build_tabs
 class MainWindow(Gtk.Window):
     def __init__(self):
         super().__init__(title="ADGuard VPN Desktop")
+        self.set_decorated(True)
+        self.set_resizable(True)
+        self.set_keep_above(False)
         self.set_default_size(900, 620)
         self.set_size_request(640, 460)
         self.set_position(Gtk.WindowPosition.CENTER)
