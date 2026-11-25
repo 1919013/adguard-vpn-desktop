@@ -1,7 +1,7 @@
 """Reusable GTK dialogs with scrollable, selectable long messages."""
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
+from gi.repository import Gtk, GLib
 
 
 def show_scrolled_message(parent, title, body, message_type=Gtk.MessageType.INFO):
@@ -46,5 +46,3 @@ def show_scrolled_message(parent, title, body, message_type=Gtk.MessageType.INFO
     dialog.destroy()
     return response
 
-
-from gi.repository import GLib
