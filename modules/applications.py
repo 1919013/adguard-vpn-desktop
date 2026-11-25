@@ -42,6 +42,8 @@ def build_applications_tab():
     mode_box.pack_start(all_mode, False, False, 0)
     mode_box.pack_start(selected_mode, False, False, 0)
     root.pack_start(mode_box, False, False, 0)
+    apply_mode_button = Gtk.Button(label="Применить выбранный режим")
+    mode_box.pack_start(apply_mode_button, False, False, 0)
 
     search = Gtk.SearchEntry()
     search.set_placeholder_text("Поиск по началу названия: например, tel")
@@ -89,39 +91,132 @@ def build_applications_tab():
     stop_requested = False
     launch_controls = {}
     routing_mode = "selected"
+    applied_mode = None
+    initializing_mode = True
+    mode_busy = False
 
     def update_mode_visibility():
         show_selection = routing_mode == "selected"
         for widget in (search, custom_row, actions, scroller):
             widget.set_visible(show_selection)
+        desired = "AUTO" if routing_mode == "all" else "SCRIPT"
+        current = applied_mode or "не распознан"
+        pending = applied_mode != desired
         if routing_mode == "all":
             summary.set_text(
-                "Режим «Все приложения через AdGuard» выбран. "
-                "Для фактической маршрутизации всего трафика AdGuard VPN CLI должен работать "
-                "в системном режиме маршрутизации AUTO. Этот интерфейс пока не переключает "
-                "режим CLI автоматически."
+                "Выбран режим «Все приложения». Для всего системного трафика требуется "
+                "AdGuard VPN CLI AUTO. Текущий режим CLI: " + current + ". "
+                + ("Нажми «Применить выбранный режим» для переключения." if pending else "Режим CLI подтверждён.")
             )
         else:
             summary.set_text(
-                f"Режим «Избранные приложения через AdGuard». Выбрано: {len(selected)}"
+                "Выбран режим «Избранные приложения». Для выборочной маршрутизации требуется "
+                "AdGuard VPN CLI SCRIPT. Текущий режим CLI: " + current + ". "
+                + ("Нажми «Применить выбранный режим» для переключения." if pending else
+                   "Режим CLI подтверждён. Если CLI ещё не создавал route script, создай его командой "
+                   "adguardvpn-cli config create-route-script.")
+                + f" Выбрано приложений: {len(selected)}."
             )
 
     def on_mode_toggled(widget):
         nonlocal routing_mode
-        if not widget.get_active():
+        if initializing_mode or mode_busy or not widget.get_active():
             return
         routing_mode = "all" if widget is all_mode else "selected"
-        try:
-            save_selection(selected, custom_paths, mode=routing_mode)
-        except (OSError, ValueError) as exc:
-            summary.set_text("Не удалось сохранить режим: " + str(exc))
-            return
         update_mode_visibility()
         if routing_mode == "selected":
             render()
 
+    def finish_mode_change(result, error):
+        nonlocal applied_mode, mode_busy, routing_mode
+        mode_busy = False
+        all_mode.set_sensitive(True)
+        selected_mode.set_sensitive(True)
+        apply_mode_button.set_sensitive(True)
+        if error is not None:
+            if applied_mode == "AUTO":
+                routing_mode = "all"
+            elif applied_mode == "SCRIPT":
+                routing_mode = "selected"
+            all_mode.set_active(routing_mode == "all")
+            selected_mode.set_active(routing_mode == "selected")
+            update_mode_visibility()
+            summary.set_text("Не удалось изменить режим AdGuard VPN CLI: " + str(error))
+            return False
+        applied_mode = result["routing_mode"]
+        routing_mode = "all" if applied_mode == "AUTO" else "selected"
+        all_mode.set_active(routing_mode == "all")
+        selected_mode.set_active(routing_mode == "selected")
+        try:
+            stored_mode = ("all" if applied_mode == "AUTO" else
+                           "selected" if applied_mode == "SCRIPT" else routing_mode)
+            save_selection(selected, custom_paths, mode=stored_mode)
+            save_error = None
+        except Exception as exc:
+            save_error = exc
+        update_mode_visibility()
+        message = (
+            "Режим AdGuard VPN CLI подтверждён: "
+            + applied_mode
+            + ". Change system DNS: on."
+        )
+        if save_error is not None:
+            message += "\nНе удалось сохранить выбор приложений: " + str(save_error)
+        summary.set_text(message)
+        if routing_mode == "selected":
+            render()
+        return False
+
+    def apply_selected_mode(*_):
+        nonlocal mode_busy
+        if launching:
+            summary.set_text(
+                "Нельзя менять системный режим, пока приложение работает в отдельной VPN-группе. "
+                "Сначала завершите его или прекратите его маршрутизацию."
+            )
+            return
+        if mode_busy:
+            return
+        desired = "AUTO" if routing_mode == "all" else "SCRIPT"
+        previous = applied_mode or "не распознан"
+        dialog = Gtk.MessageDialog(
+            transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
+            flags=Gtk.DialogFlags.MODAL,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.CANCEL,
+            text="Подтвердите смену режима маршрутизации",
+        )
+        dialog.format_secondary_text(
+            ("Будет установлен AUTO: AdGuard VPN CLI будет направлять через TUN весь системный "
+             "трафик с учётом собственных исключений. Текущий режим: " + previous + ".")
+            if desired == "AUTO" else
+            ("Будет установлен SCRIPT: CLI будет использовать пользовательский сценарий маршрутизации. "
+             "Если сценарий ещё не создан, сначала потребуется команда "
+             "adguardvpn-cli config create-route-script. Текущий режим: " + previous + ".")
+        )
+        dialog.add_button("Применить", Gtk.ResponseType.OK)
+        response = dialog.run()
+        dialog.destroy()
+        if response != Gtk.ResponseType.OK:
+            return
+        mode_busy = True
+        all_mode.set_sensitive(False)
+        selected_mode.set_sensitive(False)
+        apply_mode_button.set_sensitive(False)
+        summary.set_text("Изменение и проверка режима CLI " + desired + "…")
+
+        def worker():
+            try:
+                result = runtime.set_routing_mode(desired)
+                GLib.idle_add(finish_mode_change, result, None)
+            except Exception as exc:
+                GLib.idle_add(finish_mode_change, None, exc)
+
+        threading.Thread(target=worker, name="adguard-routing-mode", daemon=True).start()
+
     all_mode.connect("toggled", on_mode_toggled)
     selected_mode.connect("toggled", on_mode_toggled)
+    apply_mode_button.connect("clicked", apply_selected_mode)
 
     def refresh_launch_controls():
         for desktop_id, pair in launch_controls.items():
@@ -257,7 +352,7 @@ def build_applications_tab():
             update_mode_visibility()
 
     def load(*_):
-        nonlocal applications
+        nonlocal applications, routing_mode, applied_mode, initializing_mode
         try:
             saved = load_selection()
             custom_paths.clear()
@@ -277,13 +372,24 @@ def build_applications_tab():
             known_ids = {app.desktop_id for app in applications}
             selected.clear()
             selected.update(set(saved["selected_ids"]) & known_ids)
-            nonlocal_mode = saved.get("mode", "selected")
-            if nonlocal_mode not in ("all", "selected"):
-                nonlocal_mode = "selected"
-            nonlocal routing_mode
-            routing_mode = nonlocal_mode
+            try:
+                cli_config = runtime.get_routing_config()
+                applied_mode = cli_config["routing_mode"]
+                if applied_mode == "AUTO":
+                    routing_mode = "all"
+                elif applied_mode == "SCRIPT":
+                    routing_mode = "selected"
+                else:
+                    routing_mode = saved.get("mode", "selected")
+            except Exception:
+                applied_mode = None
+                routing_mode = saved.get("mode", "selected")
+            if routing_mode not in ("all", "selected"):
+                routing_mode = "selected"
+            initializing_mode = True
             all_mode.set_active(routing_mode == "all")
             selected_mode.set_active(routing_mode == "selected")
+            initializing_mode = False
             update_mode_visibility()
             if custom_paths != set(saved["custom_paths"]):
                 persist()
