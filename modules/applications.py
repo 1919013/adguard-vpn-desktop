@@ -249,9 +249,12 @@ def build_applications_tab():
         if not visible:
             rows.pack_start(Gtk.Label(label="Приложения не найдены.", xalign=0), False, False, 0)
         rows.show_all()
-        summary.set_text(
-            f"Найдено: {len(applications)} · Показано: {len(visible)} · Выбрано: {len(selected)}"
-        )
+        if routing_mode == "selected":
+            summary.set_text(
+                f"Найдено: {len(applications)} · Показано: {len(visible)} · Выбрано: {len(selected)}"
+            )
+        else:
+            update_mode_visibility()
 
     def load(*_):
         nonlocal applications
