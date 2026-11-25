@@ -15,7 +15,9 @@ from services.routing_inspector import RoutingInspector
 from services.split_tunnel_launch_gate import SplitTunnelLaunchGate, LaunchGateError
 from services.split_tunnel_planner import build_split_tunnel_plan
 from services.vpn_status_watcher import VPNStatusWatcher
-from services.routing_mode_manager import read_cli_routing_config, set_cli_routing_mode
+from services.routing_mode_manager import (
+    read_cli_routing_config, set_cli_routing_mode, create_cli_route_script,
+)
 
 
 class SplitTunnelRuntimeError(RuntimeError):
@@ -65,6 +67,13 @@ class SplitTunnelRuntime:
     def get_routing_config(self) -> dict:
         """Return the currently verified AdGuard VPN CLI routing configuration."""
         return read_cli_routing_config(self.runner)
+
+    def create_route_script(self):
+        """Ask the official CLI to create its default script only if absent."""
+        try:
+            return create_cli_route_script(self.runner)
+        except Exception as exc:
+            raise SplitTunnelRuntimeError(str(exc)) from exc
 
     def set_routing_mode(self, mode: str) -> dict:
         """Switch AUTO/SCRIPT only when no process-specific routing is active."""
