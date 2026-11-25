@@ -35,7 +35,7 @@ def _probe_dns_server(server: str, *, timeout: float = 2.5) -> tuple[bool, str]:
         question = b"".join(
             bytes([len(label)]) + label.encode("ascii")
             for label in ("example", "com")
-        ) + b"\\x00"
+        ) + b"\x00"
         packet = struct.pack("!HHHHHH", query_id, 0x0100, 1, 0, 0, 0)
         packet += question + struct.pack("!HH", 1, 1)
         family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
