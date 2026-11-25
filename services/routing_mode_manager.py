@@ -1,7 +1,9 @@
 """Transactional AdGuard VPN CLI routing-mode configuration."""
 from __future__ import annotations
 
+import os
 import re
+from pathlib import Path
 from typing import Callable
 
 from core.commands import run_cli
@@ -30,6 +32,12 @@ def parse_cli_routing_config(output: str) -> dict:
         "routing_mode": routing.group(1).upper() if routing else None,
         "change_system_dns": bool(dns and dns.group(1).casefold() in ("on", "yes", "true")),
         "dns_setting_known": dns is not None,
+        "data_dir": (
+            re.search(r"^\\s*(?:CLI\\s+)?Data\\s+directory\\s*[:=]\\s*(.+)$",
+                      text, re.IGNORECASE | re.MULTILINE).group(1).strip()
+            if re.search(r"^\\s*(?:CLI\\s+)?Data\\s+directory\\s*[:=]\\s*(.+)$",
+                         text, re.IGNORECASE | re.MULTILINE) else None
+        ),
     }
 
 
@@ -46,6 +54,42 @@ def read_cli_routing_config(runner: Callable = run_cli) -> dict:
     return parsed
 
 
+def route_script_path(config: dict | None = None) -> Path:
+    """Resolve the CLI-owned route script without guessing a user profile name."""
+    if config and config.get("data_dir"):
+        directory = Path(config["data_dir"]).expanduser()
+    else:
+        data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+        directory = data_home / "adguardvpn-cli"
+    return directory / "setup_routes.sh"
+
+
+def create_cli_route_script(runner: Callable = run_cli) -> Path:
+    """Create the official CLI script only when its target path does not exist."""
+    config = read_cli_routing_config(runner)
+    if config["vpn_mode"] != "TUN":
+        raise RoutingModeError("Для пользовательского route script требуется VPN mode TUN.")
+    target = route_script_path(config)
+    if target.exists() or target.is_symlink():
+        if target.is_symlink() or not target.is_file() or not os.access(target, os.X_OK):
+            raise RoutingModeError(
+                "Файл route script уже существует, но не является обычным исполняемым файлом. "
+                "Он не был изменён."
+            )
+        return target
+    code, output = runner(["config", "create-route-script"], timeout=20)
+    if code:
+        raise RoutingModeError(
+            "CLI не смог создать route script: " + (output or "ошибка CLI")
+        )
+    if not target.is_file() or target.is_symlink() or not os.access(target, os.X_OK):
+        raise RoutingModeError(
+            "CLI сообщил об успешном создании route script, но ожидаемый исполняемый файл "
+            + str(target) + " не найден. Проверь config show; файл не изменялся повторно."
+        )
+    return target
+
+
 def set_cli_routing_mode(mode: str, runner: Callable = run_cli) -> dict:
     """Set AUTO for all-apps or SCRIPT for per-app mode, with verification/rollback."""
     desired = str(mode).strip().upper()
@@ -54,6 +98,14 @@ def set_cli_routing_mode(mode: str, runner: Callable = run_cli) -> dict:
     before = read_cli_routing_config(runner)
     if before["vpn_mode"] != "TUN":
         raise RoutingModeError("Для режимов AUTO/SCRIPT требуется VPN mode TUN. SOCKS не менялся.")
+    if desired == "SCRIPT":
+        script = route_script_path(before)
+        if script.is_symlink() or not script.is_file() or not os.access(script, os.X_OK):
+            raise RoutingModeError(
+                "Для режима SCRIPT нужен исполняемый route script. Нажми «Создать route script» "
+                "или выполни adguardvpn-cli config create-route-script. "
+                "Существующие файлы автоматически не перезаписываются."
+            )
     dns_was_enabled = before["change_system_dns"]
     if not dns_was_enabled:
         code, output = runner(["config", "set-change-system-dns", "on"], timeout=20)
