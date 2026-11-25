@@ -91,9 +91,9 @@ def build_applications_tab():
     routing_mode = "selected"
 
     def update_mode_visibility():
-        selected = routing_mode == "selected"
+        show_selection = routing_mode == "selected"
         for widget in (search, custom_row, actions, scroller):
-            widget.set_visible(selected)
+            widget.set_visible(show_selection)
         if routing_mode == "all":
             summary.set_text(
                 "Режим «Все приложения через AdGuard» выбран. "
