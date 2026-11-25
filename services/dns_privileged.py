@@ -251,6 +251,17 @@ class TemporaryDNSHelper:
                             f"Проверка активного DNS на {ifname} не пройдена: "
                             f"ожидались {', '.join(servers)}, получены {', '.join(sorted(actual)) or 'нет серверов'}."
                         )
+                if self.manage_guard:
+                    self._run(
+                        ["systemctl", "start", "adguard-vpn-desktop-dns-guard.service"],
+                        timeout=30,
+                    )
+                    active = self._run(
+                        ["systemctl", "is-active", "adguard-vpn-desktop-dns-guard.service"],
+                        timeout=10,
+                    )
+                    if active.strip() != "active":
+                        raise DNSHelperError("Служба аварийного восстановления DNS не запустилась.")
             except Exception as exc:
                 rollback_errors = []
                 if self.manage_guard:
