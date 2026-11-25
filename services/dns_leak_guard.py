@@ -88,6 +88,19 @@ class DNSLeakGuard:
             cli_resolv_conf or data_home / "adguardvpn-cli" / "resolv.conf"
         )
 
+    def read_cli_upstreams(self) -> tuple[str, ...]:
+        """Read the DNS upstream list written by AdGuard VPN CLI."""
+        try:
+            content = self.cli_resolv_conf.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise RuntimeError(
+                f"Не удалось прочитать DNS upstream AdGuard VPN CLI: {exc}"
+            ) from exc
+        servers = _nameservers(content)
+        if not servers:
+            raise RuntimeError("Файл DNS AdGuard VPN CLI не содержит допустимых nameserver.")
+        return servers
+
     def inspect(self, tunnel_interface: str) -> dict:
         reasons = []
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,15}", tunnel_interface or ""):
