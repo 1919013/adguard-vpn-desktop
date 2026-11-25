@@ -18,7 +18,7 @@ class DNSLeakGuardTests(unittest.TestCase):
             def runner(argv, timeout=8):
                 return 0, '[{"dst":"46.243.231.30","dev":"tun0"}]' if argv[-1] == "46.243.231.30" else '[{"dst":"46.243.231.31","dev":"tun0"}]'
 
-            guard = DNSLeakGuard(runner=runner, resolv_conf=active, cli_resolv_conf=cli)
+            guard = DNSLeakGuard(runner=runner, resolv_conf=active, cli_resolv_conf=cli, query_probe=lambda _server: (True, "test DNS reply"))
             result = guard.inspect("tun0")
             self.assertTrue(result["ready"], result["reasons"])
             self.assertEqual(set(result["servers"]), {"46.243.231.30", "46.243.231.31"})
@@ -33,6 +33,7 @@ class DNSLeakGuardTests(unittest.TestCase):
             guard = DNSLeakGuard(
                 runner=lambda argv, timeout=8: (0, '[{"dev":"tun0"}]'),
                 resolv_conf=active, cli_resolv_conf=cli,
+                query_probe=lambda _server: (True, "test DNS reply"),
             )
             result = guard.inspect("tun0")
             self.assertFalse(result["ready"])
