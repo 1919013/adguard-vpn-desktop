@@ -8,5 +8,7 @@ i18n usr/lib/adguard-vpn-desktop
 docs/help.html usr/share/doc/adguard-vpn-desktop
 tools/adguard-vpn-desktop usr/bin
 tools/adguard-vpn-desktop-helper usr/libexec
-data/polkit-1/actions/org.adguard-vpn-desktop.policy usr/share/polkit-1/actions
+tools/adguard-vpn-desktop-dns-helper usr/libexec
+data/systemd/system/adguard-vpn-desktop-dns-guard.service usr/lib/systemd/system
+data/polkit-1/actions/*.policy usr/share/polkit-1/actions
 adguard-vpn-desktop.desktop usr/share/applications
