@@ -90,13 +90,18 @@ def build_dns_tab(manager: DNSManager | None = None):
     warning.set_xalign(0)
     warning.set_line_wrap(True)
     warning.set_markup(
-        "<b>Безопасный тестовый режим.</b> Изменения разрешены только для "
+        "<b>Два отдельных механизма.</b> Тестовые операции с профилями ниже разрешены только для "
         + ", ".join(TEST_PROFILES)
-        + ". Активные пользовательские профили не изменяются."
+        + ". Кнопки временного системного DNS меняют runtime-настройки активных Ethernet/Wi-Fi "
+        "устройств NetworkManager, но не записывают изменения в постоянные профили. "
+        "Для них используется отдельный Polkit helper и служба аварийного восстановления."
     )
     root.pack_start(warning, False, False, 0)
 
-    profile_label = Gtk.Label(label="DNS AdGuard: 46.243.231.30, 46.243.231.31")
+    profile_label = Gtk.Label(
+        label="Системный DNS временно берётся из upstream-файла AdGuard VPN CLI "
+              "(обычно 46.243.231.30 и 46.243.231.31)."
+    )
     profile_label.set_xalign(0)
     root.pack_start(profile_label, False, False, 0)
 
@@ -283,6 +288,8 @@ def build_dns_tab(manager: DNSManager | None = None):
                     + "TUN: " + str(data.get("tunnel")) + "\n"
                     + "DNS: " + ", ".join(data.get("dns_servers", [])) + "\n"
                     + "Устройства: " + ", ".join(x["ifname"] for x in data.get("devices", []))
+                    + "\nПроверенные DNS-запросы: "
+                    + ", ".join(data.get("verification", {}).get("probed_servers", []))
                     + "\n\nПостоянные профили NetworkManager не изменялись. "
                     "Служба восстановления запущена."
                 ),
