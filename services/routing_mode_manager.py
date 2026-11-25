@@ -54,12 +54,15 @@ def set_cli_routing_mode(mode: str, runner: Callable = run_cli) -> dict:
     before = read_cli_routing_config(runner)
     if before["vpn_mode"] != "TUN":
         raise RoutingModeError("Для режимов AUTO/SCRIPT требуется VPN mode TUN. SOCKS не менялся.")
-    if desired == "SCRIPT" and before["routing_mode"] == "NONE":
-        # The custom script is a user-owned executable; never create or overwrite it silently.
-        raise RoutingModeError(
-            "Для SCRIPT сначала создай пользовательский route script командой "
-            "adguardvpn-cli config create-route-script, затем повтори переключение."
-        )
+    if desired == "SCRIPT" and before["routing_mode"] != "SCRIPT":
+        # The CLI creates its own script in its configured data directory. Do not
+        # overwrite an existing script; an "already exists" response is accepted.
+        code, output = runner(["config", "create-route-script"], timeout=20)
+        if code and not re.search(r"already exists|already created", output or "", re.IGNORECASE):
+            raise RoutingModeError(
+                "Не удалось подготовить пользовательский route script для SCRIPT: "
+                + (output or "ошибка CLI")
+            )
 
     dns_was_enabled = before["change_system_dns"]
     if not dns_was_enabled:
