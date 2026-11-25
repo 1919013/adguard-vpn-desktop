@@ -109,14 +109,15 @@ def build_applications_tab():
             summary.set_text(
                 "Выбран режим «Все приложения». Для всего системного трафика требуется "
                 "AdGuard VPN CLI AUTO. Текущий режим CLI: " + current + ". "
-                + ("Нажми «Применить выбранный режим» для переключения." if pending else "Режим CLI подтверждён.")
+                + ("Нажми «Применить выбранный режим» для переключения." if pending else "Конфигурация CLI установлена; фактические маршруты проверь после переподключения VPN.")
             )
         else:
             summary.set_text(
                 "Выбран режим «Избранные приложения». Для выборочной маршрутизации требуется "
                 "AdGuard VPN CLI SCRIPT. Текущий режим CLI: " + current + ". "
                 + ("Нажми «Применить выбранный режим» для переключения." if pending else
-                   "Режим CLI подтверждён. Если CLI ещё не создавал route script, создай его командой "
+                   "Конфигурация CLI установлена; фактические маршруты проверь после переподключения VPN. "
+                   "Если CLI ещё не создавал route script, создай его командой "
                    "adguardvpn-cli config create-route-script.")
                 + f" Выбрано приложений: {len(selected)}."
             )
@@ -159,10 +160,12 @@ def build_applications_tab():
             save_error = exc
         update_mode_visibility()
         message = (
-            "Режим AdGuard VPN CLI подтверждён: "
+            "Конфигурация AdGuard VPN CLI установлена: "
             + applied_mode
             + ". Change system DNS: on."
         )
+        if result.get("changed"):
+            message += " Переподключи VPN, чтобы CLI применил новый режим маршрутизации."
         if save_error is not None:
             message += "\nНе удалось сохранить выбор приложений: " + str(save_error)
         summary.set_text(message)
@@ -268,7 +271,9 @@ def build_applications_tab():
     def refresh_launch_controls():
         for desktop_id, pair in launch_controls.items():
             launch_button, stop_button = pair
-            launch_button.set_sensitive(not launching and desktop_id in selected)
+            launch_button.set_sensitive(
+                applied_mode == "SCRIPT" and not launching and desktop_id in selected
+            )
             stop_button.set_sensitive(
                 launching and desktop_id == active_app_id and not stop_requested
             )
@@ -371,7 +376,10 @@ def build_applications_tab():
             line.pack_start(check, True, True, 0)
             launch_button = Gtk.Button(label="Запустить через VPN")
             launch_button.connect("clicked", lambda _button, item=app: launch_application(item))
-            launch_button.set_sensitive(app.desktop_id in selected and not launching and not app.dbus_activatable)
+            launch_button.set_sensitive(
+                applied_mode == "SCRIPT" and app.desktop_id in selected
+                and not launching and not app.dbus_activatable
+            )
             if app.dbus_activatable:
                 launch_button.set_tooltip_text("D-Bus activation пока не поддерживается")
             stop_button = Gtk.Button(label="Прекратить работу приложения через VPN")
