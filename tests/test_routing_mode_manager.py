@@ -1,5 +1,8 @@
 """Tests for AdGuard VPN CLI routing mode changes."""
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from services.routing_mode_manager import (
     parse_cli_routing_config, read_cli_routing_config,
@@ -51,13 +54,28 @@ class RoutingModeManagerTests(unittest.TestCase):
         self.assertEqual(cli.mode, "AUTO")
         self.assertIn(["config", "set-tun-routing-mode", "AUTO"], cli.commands)
 
-    def test_switches_selected_apps_to_script(self):
+    def test_switches_selected_apps_to_script_when_route_script_exists(self):
         cli = FakeCLI(mode="AUTO")
-        result = set_cli_routing_mode("SCRIPT", cli)
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "setup_routes.sh"
+            script.write_text("#!/bin/sh\\n", encoding="utf-8")
+            script.chmod(0o700)
+            with patch("services.routing_mode_manager.route_script_path", return_value=script):
+                result = set_cli_routing_mode("SCRIPT", cli)
         self.assertEqual(result["routing_mode"], "SCRIPT")
         self.assertEqual(cli.mode, "SCRIPT")
         self.assertIn(["config", "set-tun-routing-mode", "SCRIPT"], cli.commands)
         self.assertNotIn(["config", "create-route-script"], cli.commands)
+
+    def test_refuses_script_mode_without_executable_route_script(self):
+        cli = FakeCLI(mode="AUTO")
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "missing.sh"
+            with patch("services.routing_mode_manager.route_script_path", return_value=script):
+                with self.assertRaises(RoutingModeError):
+                    set_cli_routing_mode("SCRIPT", cli)
+        self.assertEqual(cli.mode, "AUTO")
+        self.assertNotIn(["config", "set-tun-routing-mode", "SCRIPT"], cli.commands)
 
     def test_enables_system_dns_before_changing_mode(self):
         cli = FakeCLI(mode="SCRIPT", dns=False)
