@@ -33,7 +33,7 @@ def parse_cli_routing_config(output: str) -> dict:
         "change_system_dns": bool(dns and dns.group(1).casefold() in ("on", "yes", "true")),
         "dns_setting_known": dns is not None,
         "data_dir": (
-            re.search(r"^\\s*(?:CLI\\s+)?Data\\s+directory\\s*[:=]\\s*(.+)$",
+            re.search(r"^\s*(?:CLI\s+)?Data\s+directory\s*[:=]\s*(.+)$",
                       text, re.IGNORECASE | re.MULTILINE).group(1).strip()
             if re.search(r"^\\s*(?:CLI\\s+)?Data\\s+directory\\s*[:=]\\s*(.+)$",
                          text, re.IGNORECASE | re.MULTILINE) else None
