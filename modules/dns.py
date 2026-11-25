@@ -11,6 +11,7 @@ from typing import Callable
 from services.dns_manager import DNSManager, DNSManagerError, TEST_PROFILES
 from services.polkit_dns import PolkitDNSClient
 from services.routing_inspector import RoutingInspector
+from services.dns_leak_guard import DNSLeakGuard
 
 
 class DNSController:
@@ -42,7 +43,25 @@ class DNSController:
         snapshot = RoutingInspector().inspect()
         if not snapshot.connected or not snapshot.tunnel_interface:
             raise RuntimeError("AdGuard VPN CLI не подтвердил активный TUN-туннель.")
-        return self.runtime_client.apply(snapshot.tunnel_interface)
+        guard = DNSLeakGuard()
+        servers = guard.read_cli_upstreams()
+        result = self.runtime_client.apply(snapshot.tunnel_interface, servers)
+        verification = guard.inspect(snapshot.tunnel_interface)
+        if not verification["ready"]:
+            try:
+                self.runtime_client.restore()
+                recovery = "Временные настройки DNS восстановлены."
+            except Exception as restore_error:
+                recovery = "КРИТИЧЕСКИ: автоматическое восстановление не подтверждено: " + str(restore_error)
+            raise RuntimeError(
+                "После применения системный DNS не прошёл проверку маршрута и реального DNS-запроса: "
+                + "; ".join(verification["reasons"]) + " " + recovery
+            )
+        result["verification"] = {
+            "ready": True,
+            "probed_servers": list(verification.get("probed_servers", [])),
+        }
+        return result
 
     def restore_runtime_dns(self) -> dict:
         return self.runtime_client.restore()
