@@ -101,17 +101,22 @@ class TemporaryDNSHelperTests(unittest.TestCase):
                 helper.apply("tun0")
             self.assertFalse(fake.modified)
 
-    def test_restore_does_not_touch_a_replaced_connection(self):
+    def test_restore_retains_state_if_replaced_device_still_has_override(self):
         with tempfile.TemporaryDirectory() as tmp:
             fake = FakeNetwork()
             helper = self.make_helper(tmp, fake)
             helper.apply("tun0")
             fake.uuids["enp1s0"] = "33333333-3333-4333-8333-333333333333"
+            with self.assertRaises(DNSHelperError):
+                helper.restore()
+            self.assertTrue(Path(tmp, "dns-runtime.json").exists())
+            self.assertIn("enp1s0", fake.modified)
+            # A later profile activation clears the runtime override; stale state can then be retired.
+            fake.modified.discard("enp1s0")
             restored = helper.restore()
             results = {item["ifname"]: item["result"] for item in restored["devices"]}
             self.assertEqual(results["enp1s0"], "skipped-connection-changed")
-            self.assertEqual(results["wlp2s0"], "restored-from-active-profile")
-            self.assertIn("enp1s0", fake.modified)
+            self.assertEqual(results["wlp2s0"], "restored-and-verified")
 
     def test_refuses_when_vpn_is_disconnected(self):
         with tempfile.TemporaryDirectory() as tmp:
