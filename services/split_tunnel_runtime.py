@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 from core.commands import run_cli
@@ -56,6 +57,22 @@ class SplitTunnelRuntime:
         self.watcher = watcher or VPNStatusWatcher(runner=runner)
         self.helper = helper or PolkitSplitTunnelClient()
         self.gate = gate or SplitTunnelLaunchGate()
+        self._stop_routing_request = None
+        self._routing_stopped_event = None
+
+    def stop_routing(self, timeout: float = 15.0) -> bool:
+        """Remove this app's VPN policy without terminating its process."""
+        request = self._stop_routing_request
+        completed = self._routing_stopped_event
+        if request is None or completed is None:
+            raise SplitTunnelRuntimeError("Сейчас нет активного защищённого запуска приложения.")
+        request.set()
+        if not completed.wait(timeout):
+            raise SplitTunnelRuntimeError(
+                "Не получено подтверждение удаления правил маршрутизации. "
+                "Приложение не следует считать отключённым от VPN."
+            )
+        return True
 
     @staticmethod
     def _nft_table_is_absent() -> bool:
@@ -104,6 +121,8 @@ class SplitTunnelRuntime:
         return False
 
     def launch(self, application) -> int:
+        self._stop_routing_request = threading.Event()
+        self._routing_stopped_event = threading.Event()
         if self._already_running(application):
             raise SplitTunnelRuntimeError(
                 "Обнаружен уже запущенный экземпляр приложения. Сначала полностью закрой его, "
@@ -192,8 +211,12 @@ class SplitTunnelRuntime:
                 application.exec_argv, application.desktop_id,
                 apply_rules=apply_rules, verify_rules=verify_rules,
                 remove_rules=remove_rules, cancel_event=watch.cancel_event,
+                stop_routing_event=self._stop_routing_request,
+                routing_stopped_event=self._routing_stopped_event,
             )
         except LaunchGateError as exc:
             raise SplitTunnelRuntimeError(str(exc)) from exc
         finally:
             watch.stop()
+            self._stop_routing_request = None
+            self._routing_stopped_event = None
