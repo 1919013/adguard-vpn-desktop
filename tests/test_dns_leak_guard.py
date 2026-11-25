@@ -66,6 +66,23 @@ class DNSLeakGuardTests(unittest.TestCase):
             self.assertFalse(result["ready"])
             self.assertTrue(any("DNS-stub" in reason for reason in result["reasons"]))
 
+    def test_refuses_unreachable_dns_upstream_even_when_route_is_tun(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cli = root / "cli-resolv.conf"
+            active = root / "resolv.conf"
+            cli.write_text("nameserver 46.243.231.30\\n")
+            active.write_text("nameserver 46.243.231.30\\n")
+            guard = DNSLeakGuard(
+                runner=lambda argv, timeout=8: (0, '[{"dev":"tun0"}]'),
+                resolv_conf=active,
+                cli_resolv_conf=cli,
+                query_probe=lambda _server: (False, "timeout"),
+            )
+            result = guard.inspect("tun0")
+            self.assertFalse(result["ready"])
+            self.assertTrue(any("реального DNS-запроса" in reason for reason in result["reasons"]))
+
 
 if __name__ == "__main__":
     unittest.main()
