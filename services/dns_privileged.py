@@ -423,8 +423,16 @@ class TemporaryDNSHelper:
     def watch(self, interval=4):
         """System service loop; restores runtime DNS after VPN loss or SIGTERM."""
         self._require_root()
+        stopping = False
+
+        def request_stop(_signum, _frame):
+            nonlocal stopping
+            stopping = True
+
+        previous_term = signal.signal(signal.SIGTERM, request_stop)
+        previous_int = signal.signal(signal.SIGINT, request_stop)
         try:
-            while True:
+            while not stopping:
                 state = self._read_state()
                 if state is None:
                     self.sleep(interval)
@@ -444,6 +452,8 @@ class TemporaryDNSHelper:
                         pass
                 self.sleep(interval)
         finally:
+            signal.signal(signal.SIGTERM, previous_term)
+            signal.signal(signal.SIGINT, previous_int)
             try:
                 self.restore()
             except Exception:
