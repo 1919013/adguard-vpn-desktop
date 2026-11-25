@@ -90,7 +90,8 @@ class SplitTunnelLaunchGate:
             apply_rules: Callable[[str], None],
             verify_rules: Callable[[str], bool],
             remove_rules: Callable[[], None],
-            cancel_event=None, handshake_timeout: float = 15.0) -> int:
+            cancel_event=None, stop_routing_event=None,
+            routing_stopped_event=None, handshake_timeout: float = 15.0) -> int:
         if isinstance(command, (str, bytes)) or not command:
             raise LaunchGateError("Команда приложения пуста или задана строкой.")
         if not all(isinstance(arg, str) and arg for arg in command):
@@ -188,6 +189,16 @@ class SplitTunnelLaunchGate:
                         process.kill()
                         process.wait(timeout=5)
                     raise LaunchGateError("VPN отключён: приложение остановлено и маршрутизация очищается.")
+                if stop_routing_event is not None and stop_routing_event.is_set() and applied:
+                    try:
+                        remove_rules()
+                    except Exception as exc:
+                        raise LaunchGateError(
+                            f"Не удалось отключить маршрутизацию приложения: {exc}"
+                        ) from exc
+                    applied = False
+                    if routing_stopped_event is not None:
+                        routing_stopped_event.set()
                 time.sleep(self.poll_interval)
             return int(process.returncode or 0)
         except LaunchGateError:
