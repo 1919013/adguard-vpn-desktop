@@ -29,7 +29,7 @@ def _default_runner(argv: list[str], timeout: int = 10) -> tuple[int, str]:
 
 
 def _unescape_nmcli(value: str) -> str:
-    return value.replace(r"\\:", ":").replace(r"\\\\", "\\\\")
+    return value.replace(r"\:", ":").replace(r"\\", "\\")
 
 
 class NetworkManagerInventory:
