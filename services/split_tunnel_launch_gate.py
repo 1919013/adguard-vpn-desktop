@@ -91,7 +91,8 @@ class SplitTunnelLaunchGate:
             verify_rules: Callable[[str], bool],
             remove_rules: Callable[[], None],
             cancel_event=None, stop_routing_event=None,
-            routing_stopped_event=None, handshake_timeout: float = 15.0) -> int:
+            routing_stopped_event=None, routing_stop_error=None,
+            handshake_timeout: float = 15.0) -> int:
         if isinstance(command, (str, bytes)) or not command:
             raise LaunchGateError("Команда приложения пуста или задана строкой.")
         if not all(isinstance(arg, str) and arg for arg in command):
@@ -193,12 +194,20 @@ class SplitTunnelLaunchGate:
                     try:
                         remove_rules()
                     except Exception as exc:
-                        raise LaunchGateError(
-                            f"Не удалось отключить маршрутизацию приложения: {exc}"
-                        ) from exc
-                    applied = False
-                    if routing_stopped_event is not None:
-                        routing_stopped_event.set()
+                        # Keep the process and the still-installed fail-closed
+                        # policy alive. Report failure; never kill the app just
+                        # because the user requested a routing change.
+                        if routing_stop_error is None:
+                            raise LaunchGateError(
+                                f"Не удалось отключить маршрутизацию приложения: {exc}"
+                            ) from exc
+                        routing_stop_error.append(str(exc))
+                    else:
+                        applied = False
+                    finally:
+                        stop_routing_event.clear()
+                        if routing_stopped_event is not None:
+                            routing_stopped_event.set()
                 time.sleep(self.poll_interval)
             return int(process.returncode or 0)
         except LaunchGateError:
