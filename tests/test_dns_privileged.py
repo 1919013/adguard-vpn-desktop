@@ -118,6 +118,25 @@ class TemporaryDNSHelperTests(unittest.TestCase):
             self.assertEqual(results["enp1s0"], "skipped-connection-changed")
             self.assertEqual(results["wlp2s0"], "restored-and-verified")
 
+    def test_partial_apply_failure_rolls_back_every_attempted_device(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = FakeNetwork()
+            def runner(argv, *, timeout=12):
+                if argv[:3] == ["nmcli", "device", "modify"] and argv[3] == "wlp2s0":
+                    fake.commands.append(list(argv))
+                    return 1, "simulated Wi-Fi DNS failure"
+                return fake(argv, timeout=timeout)
+            helper = self.make_helper(tmp, runner)
+            with self.assertRaises(DNSHelperError):
+                helper.apply("tun0")
+            self.assertFalse(fake.modified)
+            self.assertFalse(Path(tmp, "dns-runtime.json").exists())
+            reapply_devices = [
+                command[3] for command in fake.commands
+                if command[:3] == ["nmcli", "device", "reapply"]
+            ]
+            self.assertEqual(reapply_devices, ["wlp2s0", "enp1s0"])
+
     def test_refuses_when_vpn_is_disconnected(self):
         with tempfile.TemporaryDirectory() as tmp:
             fake = FakeNetwork()
