@@ -28,13 +28,20 @@ def build_applications_tab():
     root.pack_start(title, False, False, 0)
 
     note = Gtk.Label(
-        label=("Выберите приложение и нажмите «Запустить через VPN». Оно будет запущено в отдельной "
-               "cgroup только после проверки TUN, маршрутов, DNS и установки правил. "
-               "Сначала полностью закрой уже работающий экземпляр программы. Пока запускается одно приложение за раз."),
+        label=("Выбери режим маршрутизации. Режим «Все приложения» использует системный режим "
+               "маршрутизации AdGuard VPN CLI. Режим «Избранные приложения» запускает выбранные "
+               "программы в отдельных защищённых группах процессов."),
         xalign=0,
     )
     note.set_line_wrap(True)
     root.pack_start(note, False, False, 0)
+
+    mode_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+    all_mode = Gtk.RadioButton.new_with_label_from_widget(None, "Все приложения через AdGuard")
+    selected_mode = Gtk.RadioButton.new_with_label_from_widget(all_mode, "Избранные приложения через AdGuard")
+    mode_box.pack_start(all_mode, False, False, 0)
+    mode_box.pack_start(selected_mode, False, False, 0)
+    root.pack_start(mode_box, False, False, 0)
 
     search = Gtk.SearchEntry()
     search.set_placeholder_text("Поиск по началу названия: например, tel")
@@ -81,6 +88,40 @@ def build_applications_tab():
     active_app_id = None
     stop_requested = False
     launch_controls = {}
+    routing_mode = "selected"
+
+    def update_mode_visibility():
+        selected = routing_mode == "selected"
+        for widget in (search, custom_row, actions, scroller):
+            widget.set_visible(selected)
+        if routing_mode == "all":
+            summary.set_text(
+                "Режим «Все приложения через AdGuard» выбран. "
+                "Для фактической маршрутизации всего трафика AdGuard VPN CLI должен работать "
+                "в системном режиме маршрутизации AUTO. Этот интерфейс пока не переключает "
+                "режим CLI автоматически."
+            )
+        else:
+            summary.set_text(
+                f"Режим «Избранные приложения через AdGuard». Выбрано: {len(selected)}"
+            )
+
+    def on_mode_toggled(widget):
+        nonlocal routing_mode
+        if not widget.get_active():
+            return
+        routing_mode = "all" if widget is all_mode else "selected"
+        try:
+            save_selection(selected, custom_paths, mode=routing_mode)
+        except (OSError, ValueError) as exc:
+            summary.set_text("Не удалось сохранить режим: " + str(exc))
+            return
+        update_mode_visibility()
+        if routing_mode == "selected":
+            render()
+
+    all_mode.connect("toggled", on_mode_toggled)
+    selected_mode.connect("toggled", on_mode_toggled)
 
     def refresh_launch_controls():
         for desktop_id, pair in launch_controls.items():
@@ -159,7 +200,7 @@ def build_applications_tab():
 
     def persist():
         try:
-            save_selection(selected, custom_paths)
+            save_selection(selected, custom_paths, mode=routing_mode)
         except (OSError, ValueError) as exc:
             summary.set_text("Не удалось сохранить выбор приложений: " + str(exc))
 
@@ -233,6 +274,14 @@ def build_applications_tab():
             known_ids = {app.desktop_id for app in applications}
             selected.clear()
             selected.update(set(saved["selected_ids"]) & known_ids)
+            nonlocal_mode = saved.get("mode", "selected")
+            if nonlocal_mode not in ("all", "selected"):
+                nonlocal_mode = "selected"
+            nonlocal routing_mode
+            routing_mode = nonlocal_mode
+            all_mode.set_active(routing_mode == "all")
+            selected_mode.set_active(routing_mode == "selected")
+            update_mode_visibility()
             if custom_paths != set(saved["custom_paths"]):
                 persist()
             render()
