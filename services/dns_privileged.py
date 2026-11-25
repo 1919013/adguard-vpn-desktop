@@ -293,10 +293,12 @@ class TemporaryDNSHelper:
                     if self._current_uuid(ifname) != item["uuid"]:
                         raise DNSHelperError(f"Подключение {ifname} сменилось во время настройки DNS.")
                     attempted.append(item)
+                    ipv4_servers = [server for server in servers if ipaddress.ip_address(server).version == 4]
+                    ipv6_servers = [server for server in servers if ipaddress.ip_address(server).version == 6]
                     args = ["nmcli", "device", "modify", ifname,
-                            "ipv4.dns", " ".join(servers),
+                            "ipv4.dns", " ".join(ipv4_servers),
                             "ipv4.ignore-auto-dns", "yes",
-                            "ipv6.dns", "",
+                            "ipv6.dns", " ".join(ipv6_servers),
                             "ipv6.ignore-auto-dns", "yes"]
                     self._run(args, timeout=30)
                     current = self._run([
