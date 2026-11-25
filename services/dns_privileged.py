@@ -50,10 +50,11 @@ class TemporaryDNSHelper:
     """Root-only runtime DNS override; no persistent NM profile mutations."""
 
     def __init__(self, *, state_file=STATE_FILE, runner=_default_runner,
-                 euid=os.geteuid, which=shutil.which, sleep=time.sleep):
+                 euid=os.geteuid, uid=os.getuid, which=shutil.which, sleep=time.sleep):
         self.state_file = Path(state_file)
         self.runner = runner
         self.euid = euid
+        self.uid = uid
         self.which = which
         self.sleep = sleep
         self.lock_file = self.state_file.with_suffix(".lock")
@@ -82,7 +83,7 @@ class TemporaryDNSHelper:
     def _write_state(self, state):
         directory = self.state_file.parent
         info = directory.lstat()
-        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or info.st_uid != 0:
+        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or info.st_uid != self.uid():
             raise DNSHelperError("Небезопасный каталог системного состояния DNS.")
         fd, temporary = tempfile.mkstemp(prefix=".dns-runtime-", dir=directory)
         try:
@@ -111,7 +112,7 @@ class TemporaryDNSHelper:
         except FileNotFoundError:
             return None
         if (not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)
-                or metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o600):
+                or metadata.st_uid != self.uid() or stat.S_IMODE(metadata.st_mode) != 0o600):
             raise DNSHelperError("Файл состояния DNS имеет небезопасного владельца, тип или права.")
         try:
             state = json.loads(self.state_file.read_text(encoding="utf-8"))
@@ -173,7 +174,8 @@ class TemporaryDNSHelper:
             except json.JSONDecodeError as exc:
                 raise DNSHelperError(f"Не удалось разобрать маршрут к DNS {server}.") from exc
             if not isinstance(routes, list) or not routes or any(
-                route.get("dev") != tunnel for route in routes if isinstance(route, dict)
+                not isinstance(route, dict) or route.get("dev") != tunnel
+                for route in routes
             ):
                 raise DNSHelperError(f"Маршрут DNS-сервера {server} не подтверждён через {tunnel}.")
 
@@ -214,6 +216,7 @@ class TemporaryDNSHelper:
             state = {
                 "owner": OWNER, "version": 1, "tunnel": tunnel,
                 "dns_servers": list(servers),
+                "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip(),
                 "devices": [{"ifname": x["ifname"], "uuid": x["con-uuid"]} for x in devices],
             }
             self._write_state(state)
@@ -300,7 +303,12 @@ class TemporaryDNSHelper:
                     self.sleep(interval)
                     continue
                 tunnel = state.get("tunnel")
-                if not isinstance(tunnel, str) or not self._vpn_connected(tunnel):
+                try:
+                    current_boot = Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
+                except OSError:
+                    current_boot = None
+                if (state.get("boot_id") != current_boot
+                        or not isinstance(tunnel, str) or not self._vpn_connected(tunnel)):
                     self.restore()
                 self.sleep(interval)
         finally:
