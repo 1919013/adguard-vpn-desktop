@@ -1,3 +1,16 @@
+adguard-vpn-desktop (0.2.2) unstable; urgency=medium
+
+  * Add a separate Polkit DNS helper for temporary NetworkManager device DNS.
+  * Preserve connection profiles and restore active device settings with nmcli device reapply.
+  * Add a systemd recovery monitor for VPN disconnects and interrupted DNS transactions.
+  * Verify DNS upstream routes using the invoking user's UID and probe real DNS replies.
+  * Apply AdGuard VPN CLI AUTO/SCRIPT modes with configuration verification and rollback.
+  * Require an existing executable CLI route script before enabling SCRIPT mode.
+  * Gate per-application launch on the applied SCRIPT mode.
+  * Add tests for temporary DNS rollback, stale devices and routing mode transitions.
+
+ -- ADGuard VPN Desktop contributors <noreply@example.invalid>  Wed, 25 Nov 2026 18:00:00 +0300
+
 adguard-vpn-desktop (0.2.1) unstable; urgency=medium
 
   * Add Russian Help tab and browser-readable documentation.
