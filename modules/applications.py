@@ -44,6 +44,8 @@ def build_applications_tab():
     root.pack_start(mode_box, False, False, 0)
     apply_mode_button = Gtk.Button(label="Применить выбранный режим")
     mode_box.pack_start(apply_mode_button, False, False, 0)
+    create_script_button = Gtk.Button(label="Создать route script для избранных приложений")
+    mode_box.pack_start(create_script_button, False, False, 0)
 
     search = Gtk.SearchEntry()
     search.set_placeholder_text("Поиск по началу названия: например, tel")
@@ -99,6 +101,7 @@ def build_applications_tab():
         show_selection = routing_mode == "selected"
         for widget in (search, custom_row, actions, scroller):
             widget.set_visible(show_selection)
+        create_script_button.set_visible(show_selection)
         desired = "AUTO" if routing_mode == "all" else "SCRIPT"
         current = applied_mode or "не распознан"
         pending = applied_mode != desired
@@ -214,9 +217,53 @@ def build_applications_tab():
 
         threading.Thread(target=worker, name="adguard-routing-mode", daemon=True).start()
 
+    def finish_route_script(path, error):
+        create_script_button.set_sensitive(True)
+        if error is not None:
+            summary.set_text("Не удалось создать route script: " + str(error))
+        else:
+            summary.set_text(
+                "Route script доступен: " + str(path)
+                + "\\nСуществующий файл не перезаписывался."
+            )
+        return False
+
+    def create_route_script(*_):
+        if launching or mode_busy:
+            summary.set_text("Сначала заверши текущую операцию маршрутизации.")
+            return
+        dialog = Gtk.MessageDialog(
+            transient_for=root.get_toplevel() if isinstance(root.get_toplevel(), Gtk.Window) else None,
+            flags=Gtk.DialogFlags.MODAL,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.CANCEL,
+            text="Создать пользовательский сценарий маршрутизации?",
+        )
+        dialog.format_secondary_text(
+            "Будет вызвана официальная команда AdGuard VPN CLI config create-route-script. "
+            "Если стандартный файл уже существует, он будет оставлен без изменений."
+        )
+        dialog.add_button("Создать", Gtk.ResponseType.OK)
+        response = dialog.run()
+        dialog.destroy()
+        if response != Gtk.ResponseType.OK:
+            return
+        create_script_button.set_sensitive(False)
+        summary.set_text("Проверка и создание route script…")
+
+        def worker():
+            try:
+                path = runtime.create_route_script()
+                GLib.idle_add(finish_route_script, path, None)
+            except Exception as exc:
+                GLib.idle_add(finish_route_script, None, exc)
+
+        threading.Thread(target=worker, name="adguard-route-script", daemon=True).start()
+
     all_mode.connect("toggled", on_mode_toggled)
     selected_mode.connect("toggled", on_mode_toggled)
     apply_mode_button.connect("clicked", apply_selected_mode)
+    create_script_button.connect("clicked", create_route_script)
 
     def refresh_launch_controls():
         for desktop_id, pair in launch_controls.items():
