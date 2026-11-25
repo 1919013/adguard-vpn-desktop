@@ -15,6 +15,7 @@ from services.routing_inspector import RoutingInspector
 from services.split_tunnel_launch_gate import SplitTunnelLaunchGate, LaunchGateError
 from services.split_tunnel_planner import build_split_tunnel_plan
 from services.vpn_status_watcher import VPNStatusWatcher
+from services.routing_mode_manager import read_cli_routing_config, set_cli_routing_mode
 
 
 class SplitTunnelRuntimeError(RuntimeError):
@@ -60,6 +61,21 @@ class SplitTunnelRuntime:
         self._stop_routing_request = None
         self._routing_stopped_event = None
         self._routing_stop_error = None
+
+    def get_routing_config(self) -> dict:
+        """Return the currently verified AdGuard VPN CLI routing configuration."""
+        return read_cli_routing_config(self.runner)
+
+    def set_routing_mode(self, mode: str) -> dict:
+        """Switch AUTO/SCRIPT only when no process-specific routing is active."""
+        if self._stop_routing_request is not None:
+            raise SplitTunnelRuntimeError(
+                "Сначала завершите или отключите активную маршрутизацию приложения."
+            )
+        try:
+            return set_cli_routing_mode(mode, self.runner)
+        except Exception as exc:
+            raise SplitTunnelRuntimeError(str(exc)) from exc
 
     def stop_routing(self, timeout: float = 15.0) -> bool:
         """Remove this app's VPN policy without terminating its process."""
