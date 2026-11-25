@@ -13,7 +13,7 @@ from typing import Iterable
 
 APP_CONFIG_DIR = "adguard-vpn-desktop"
 SELECTION_FILE = "applications.json"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def selection_path(environ=None) -> Path:
@@ -30,11 +30,11 @@ def load_selection(path: Path | None = None) -> dict:
     try:
         raw = json.loads(target.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return {"selected_ids": [], "custom_paths": []}
+        return {"selected_ids": [], "custom_paths": [], "mode": "selected"}
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"Не удалось прочитать сохранённый выбор приложений: {exc}") from exc
 
-    if not isinstance(raw, dict) or raw.get("schema_version") != SCHEMA_VERSION:
+    if not isinstance(raw, dict) or raw.get("schema_version") not in (1, SCHEMA_VERSION):
         raise ValueError("Неизвестный формат сохранённого выбора приложений.")
     selected = raw.get("selected_ids", [])
     custom = raw.get("custom_paths", [])
@@ -42,9 +42,13 @@ def load_selection(path: Path | None = None) -> dict:
         raise ValueError("Повреждён список выбранных приложений.")
     if not isinstance(custom, list) or not all(isinstance(x, str) and x.startswith("/") for x in custom):
         raise ValueError("Повреждён список пользовательских путей.")
+    mode = raw.get("mode", "selected")
+    if mode not in ("all", "selected"):
+        raise ValueError("Недопустимый режим маршрутизации приложений.")
     return {
         "selected_ids": sorted(set(selected)),
         "custom_paths": sorted(set(custom)),
+        "mode": mode,
     }
 
 
@@ -52,9 +56,13 @@ def save_selection(
     selected_ids: Iterable[str],
     custom_paths: Iterable[str],
     path: Path | None = None,
+    *,
+    mode: str = "selected",
 ) -> Path:
     """Atomically save IDs and absolute custom executable paths."""
     target = Path(path) if path is not None else selection_path()
+    if mode not in ("all", "selected"):
+        raise ValueError("Недопустимый режим маршрутизации приложений.")
     ids = sorted({item for item in selected_ids if isinstance(item, str) and item})
     paths = sorted({
         str(Path(item).expanduser().resolve())
@@ -63,6 +71,7 @@ def save_selection(
     })
     payload = {
         "schema_version": SCHEMA_VERSION,
+        "mode": mode,
         "selected_ids": ids,
         "custom_paths": paths,
     }
