@@ -17,6 +17,7 @@ Depends: ${misc:Depends},
          systemd,
          pkexec,
          polkitd
+Recommends: network-manager
 Description: community GTK wrapper for AdGuard VPN CLI
  ADGuard VPN Desktop is a community graphical wrapper for the official
  AdGuard VPN CLI. It is not the official AdGuard desktop application.
