@@ -3,6 +3,7 @@ from modules.applications import build_applications_tab
 from modules.connection import build_connection_tab
 from modules.dns import build_dns_tab
 from modules.interfaces import build_interfaces_tab
+from modules.help import build_help_tab
 
 
 def build_tabs(notebook):
@@ -10,7 +11,6 @@ def build_tabs(notebook):
     from gi.repository import Gtk
 
     notebook.append_page(build_connection_tab(), Gtk.Label(label="Подключение"))
-
     notebook.append_page(build_applications_tab(), Gtk.Label(label="Приложения"))
 
     page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -23,4 +23,5 @@ def build_tabs(notebook):
 
     notebook.append_page(build_dns_tab(), Gtk.Label(label="DNS и защита"))
     notebook.append_page(build_interfaces_tab(), Gtk.Label(label="Сетевые интерфейсы"))
+    notebook.append_page(build_help_tab(), Gtk.Label(label="Помощь"))
     return notebook
