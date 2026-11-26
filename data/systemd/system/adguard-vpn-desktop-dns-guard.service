@@ -1,0 +1,15 @@
+[Unit]
+Description=ADGuard VPN Desktop temporary DNS recovery monitor
+Documentation=https://github.com/1919013/adguard-vpn-desktop
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/adguard-vpn-desktop-dns-helper watch
+Restart=always
+RestartSec=3
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

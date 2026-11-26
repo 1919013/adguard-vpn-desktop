@@ -9,6 +9,8 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
+import socket
+import struct
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -23,6 +25,38 @@ def _default_runner(argv: list[str], timeout: int = 8) -> tuple[int, str]:
         return result.returncode, result.stdout.strip()
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 1, str(exc)
+
+
+def _probe_dns_server(server: str, *, timeout: float = 2.5) -> tuple[bool, str]:
+    """Send a real DNS A query directly to one upstream and validate its reply."""
+    try:
+        address = ipaddress.ip_address(server)
+        query_id = 0xAD61
+        question = b"".join(
+            bytes([len(label)]) + label.encode("ascii")
+            for label in ("example", "com")
+        ) + b"\x00"
+        packet = struct.pack("!HHHHHH", query_id, 0x0100, 1, 0, 0, 0)
+        packet += question + struct.pack("!HH", 1, 1)
+        family = socket.AF_INET6 if address.version == 6 else socket.AF_INET
+        destination = (server, 53, 0, 0) if family == socket.AF_INET6 else (server, 53)
+        with socket.socket(family, socket.SOCK_DGRAM) as client:
+            client.settimeout(timeout)
+            client.sendto(packet, destination)
+            response, _ = client.recvfrom(4096)
+        if len(response) < 12:
+            return False, "DNS-сервер вернул слишком короткий ответ."
+        response_id, flags, questions, _answers, _authority, _additional = struct.unpack(
+            "!HHHHHH", response[:12]
+        )
+        if response_id != query_id or not flags & 0x8000 or questions != 1:
+            return False, "Ответ DNS не прошёл проверку идентификатора/формата."
+        rcode = flags & 0x000F
+        if rcode != 0:
+            return False, f"DNS-сервер вернул RCODE={rcode}."
+        return True, "DNS-запрос example.com успешно обработан."
+    except (OSError, ValueError, struct.error) as exc:
+        return False, f"Реальный DNS-запрос не прошёл: {exc}"
 
 
 def _nameservers(text: str) -> tuple[str, ...]:
@@ -43,14 +77,29 @@ class DNSLeakGuard:
     def __init__(self, *, runner: Callable = _default_runner,
                  resolv_conf: Path = Path("/etc/resolv.conf"),
                  cli_resolv_conf: Path | None = None,
-                 home: Path | None = None):
+                 home: Path | None = None,
+                 query_probe: Callable[[str], tuple[bool, str]] = _probe_dns_server):
         self.runner = runner
+        self.query_probe = query_probe
         self.resolv_conf = Path(resolv_conf)
         base = Path(home or Path.home())
         data_home = Path(os.environ.get("XDG_DATA_HOME", base / ".local/share"))
         self.cli_resolv_conf = Path(
             cli_resolv_conf or data_home / "adguardvpn-cli" / "resolv.conf"
         )
+
+    def read_cli_upstreams(self) -> tuple[str, ...]:
+        """Read the DNS upstream list written by AdGuard VPN CLI."""
+        try:
+            content = self.cli_resolv_conf.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise RuntimeError(
+                f"Не удалось прочитать DNS upstream AdGuard VPN CLI: {exc}"
+            ) from exc
+        servers = _nameservers(content)
+        if not servers:
+            raise RuntimeError("Файл DNS AdGuard VPN CLI не содержит допустимых nameserver.")
+        return servers
 
     def inspect(self, tunnel_interface: str) -> dict:
         reasons = []
@@ -73,6 +122,7 @@ class DNSLeakGuard:
         if set(active_servers) != set(cli_servers):
             reasons.append("Системные DNS-серверы не совпадают с DNS-серверами AdGuard VPN CLI.")
 
+        probed_servers = []
         for server in cli_servers:
             family = "-6" if ":" in server else "-4"
             code, output = self.runner(["ip", "-j", family, "route", "get", server])
@@ -87,9 +137,16 @@ class DNSLeakGuard:
                 devs = set()
             if devs != {tunnel_interface}:
                 reasons.append(f"DNS-сервер {server} не подтверждён через {tunnel_interface} (маршрут: {', '.join(sorted(str(x) for x in devs)) or 'неизвестен'}).")
+                continue
+            probed_servers.append(server)
+            probe_ok, probe_detail = self.query_probe(server)
+            if not probe_ok:
+                reasons.append(f"Проверка реального DNS-запроса к {server} не пройдена: {probe_detail}")
 
         return {
             "ready": not reasons,
             "servers": cli_servers,
             "reasons": tuple(reasons),
+            "probed_servers": tuple(probed_servers),
+            "real_dns_queries_checked": bool(cli_servers) and len(probed_servers) == len(cli_servers),
         }
