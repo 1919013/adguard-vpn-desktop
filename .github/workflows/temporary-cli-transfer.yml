@@ -1,0 +1,31 @@
+name: Temporary CLI binary transfer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-binary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the published diagnostic binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p transfer
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+            "https://github.com/1919013/adguard-vpn-desktop/releases/download/diagnostic-cli-2026-11-26/adguardvpn-cli" \
+            --output transfer/adguardvpn-cli
+          echo "8a4e58f6a7231723f5e1ff83b535400329af5e7b7ce653cf955b8ad844eb2f1f  transfer/adguardvpn-cli" | sha256sum --check
+          file transfer/adguardvpn-cli
+          sha256sum transfer/adguardvpn-cli
+
+      - name: Upload for one-day retrieval
+        uses: actions/upload-artifact@v4
+        with:
+          name: adguardvpn-cli-analysis
+          path: transfer/adguardvpn-cli
+          if-no-files-found: error
+          retention-days: 1
