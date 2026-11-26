@@ -1,3 +1,13 @@
+adguard-vpn-desktop (0.2.3) unstable; urgency=high
+
+  * Show the last-known-good VPN location list immediately from a per-user cache.
+  * Refresh locations asynchronously with a 12-second timeout and prevent overlapping requests.
+  * Preserve the previous cache on timeout, CLI errors, empty or invalid responses.
+  * Add configurable automatic refresh intervals: 30 minutes, 1 hour or manual.
+  * Display the last successful refresh time and stale-cache status without blocking dialogs.
+
+ -- ADGuard VPN Desktop contributors <noreply@example.invalid>  Thu, 26 Nov 2026 20:30:00 +0300
+
 adguard-vpn-desktop (0.2.2) unstable; urgency=medium
 
   * Add a separate Polkit DNS helper for temporary NetworkManager device DNS.
