@@ -8,7 +8,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-_LOCATION_LINE = re.compile(r"^([A-Z]{2})\\s+(.+?)\\s{2,}(.+?)\\s{2,}(\\d+)\\s*$")
+_LOCATION_LINE = re.compile(r"^([A-Z]{2})\s+(.+?)\s{2,}(.+?)\s{2,}(\d+)\s*$")
 _ALLOWED_INTERVALS = (0, 30, 60)
 
 
